@@ -84,7 +84,10 @@
       display: grid;
       grid-template-columns: 1fr 220px;
       gap: 14px;
+      align-items: stretch;
     }
+    .form-grid > div:first-child { display: flex; flex-direction: column; }
+    .form-grid > div:first-child textarea { flex: 1; }
     @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
 
     label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
@@ -100,12 +103,12 @@
       outline: none;
       transition: border-color .2s;
       font-family: inherit;
-      resize: vertical;
     }
     textarea:focus, input:focus { border-color: var(--accent); }
-    textarea { min-height: 80px; }
+    textarea { height: 100%; min-height: unset; resize: none; }
 
     .right-col { display: flex; flex-direction: column; gap: 10px; }
+    .left-col { display: flex; flex-direction: column; }
     .token-wrap { flex: 1; }
 
     .btn-row { display: flex; gap: 8px; }
@@ -312,7 +315,7 @@
     <div class="form-grid">
       <div>
         <label>Địa chỉ Email</label>
-        <textarea id="emailInput" placeholder="alias1@icloud.com&#10;alias2@icloud.com, alias3@icloud.com"></textarea>
+        <textarea id="emailInput" placeholder="alias1@icloud.com&#10;alias2@icloud.com&#10;alias3@icloud.com&#10;alias4@icloud.com"></textarea>
         <div class="hint">Nhập nhiều email, mỗi dòng một email hoặc ngăn cách bằng dấu phẩy.</div>
       </div>
       <div class="right-col">
