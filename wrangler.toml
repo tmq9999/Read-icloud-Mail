@@ -1,0 +1,18 @@
+name = "read-icloud-mail-worker"
+main = "src/index.ts"
+compatibility_date = "2024-06-20"
+# account_id = ""  # Set via CLOUDFLARE_ACCOUNT_ID env var or wrangler login
+
+[assets]
+directory = "./public"
+
+# D1 database binding
+[[d1_databases]]
+binding = "DB_OTP_MAIL"
+database_name = "icloud-otp-mail-db"
+database_id = "b68fc39a-03c5-45b6-83f7-b6dbce47221c"
+
+# Vars (non-secret). VIEW_TOKEN should be set via `wrangler secret put VIEW_TOKEN`.
+[vars]
+LOG_RETENTION_DAYS = "7"
+MAX_MESSAGES_PER_MAILBOX = "100"

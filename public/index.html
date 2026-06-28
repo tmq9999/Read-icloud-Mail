@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iCloud Mail Viewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #22222e;
+      --border: #2e2e3e;
+      --accent: #6366f1;
+      --accent-hover: #4f52d4;
+      --accent2: #22d3ee;
+      --text: #e2e2f0;
+      --text-muted: #8888aa;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .header-title h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    .header-title p { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .auto-refresh-badge {
+      margin-left: auto;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      transition: all .2s;
+    }
+    .auto-refresh-badge.on {
+      background: rgba(34,211,238,.12);
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }
+
+    /* Main layout */
+    .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; width: 100%; }
+
+    /* Input card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 220px;
+      gap: 14px;
+    }
+    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+
+    textarea, input[type=text], input[type=password] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 14px;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color .2s;
+      font-family: inherit;
+      resize: vertical;
+    }
+    textarea:focus, input:focus { border-color: var(--accent); }
+    textarea { min-height: 80px; }
+
+    .right-col { display: flex; flex-direction: column; gap: 10px; }
+    .token-wrap { flex: 1; }
+
+    .btn-row { display: flex; gap: 8px; }
+    .btn {
+      flex: 1;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Status bar */
+    .status-bar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
+    .status-item span { color: var(--text-muted); }
+    .status-item strong { color: var(--text); margin-left: 4px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+    .dot.green { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+    /* Email tabs */
+    .email-tabs {
+      display: flex; gap: 6px; flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .tab {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      transition: all .15s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .tab:hover { border-color: var(--accent); color: var(--text); }
+    .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .tab .badge {
+      background: rgba(255,255,255,.2);
+      border-radius: 10px;
+      font-size: 11px;
+      padding: 1px 6px;
+      font-weight: 700;
+    }
+    .tab.active .badge { background: rgba(255,255,255,.25); }
+
+    /* Message list */
+    .msg-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .msg-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: border-color .15s;
+    }
+    .msg-card:hover { border-color: var(--accent); }
+
+    .msg-header {
+      padding: 14px 16px;
+      display: flex; align-items: flex-start; gap: 12px;
+      cursor: pointer;
+    }
+    .msg-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+    .msg-meta { flex: 1; min-width: 0; }
+    .msg-subject { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .msg-from { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .msg-time { font-size: 12px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+
+    /* OTP highlight */
+    .otp-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(99,102,241,.15);
+      border: 1px solid rgba(99,102,241,.4);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 22px; font-weight: 800; letter-spacing: 4px;
+      color: var(--accent2);
+      cursor: pointer;
+      margin: 10px 16px;
+      transition: background .15s;
+    }
+    .otp-chip:hover { background: rgba(99,102,241,.25); }
+    .otp-chip .copy-icon { font-size: 14px; color: var(--text-muted); }
+
+    .msg-body {
+      padding: 0 16px 14px;
+      display: none;
+    }
+    .msg-body.open { display: block; }
+    .msg-body-text {
+      font-size: 13px; color: var(--text-muted); line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      max-height: 300px; overflow-y: auto;
+    }
+
+    /* Empty / loading states */
+    .empty {
+      text-align: center; padding: 60px 20px;
+      color: var(--text-muted); font-size: 14px;
+    }
+    .empty .icon { font-size: 48px; margin-bottom: 12px; }
+
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      font-size: 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      transform: translateY(80px); opacity: 0;
+      transition: all .25s;
+      z-index: 999;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-color: var(--success); color: var(--success); }
+    .toast.error { border-color: var(--danger); color: var(--danger); }
+
+    /* Worker URL hint */
+    .hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+    .hint code { background: var(--surface2); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+
+    /* Mode toggle */
+    .mode-toggle {
+      display: flex; gap: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .mode-btn {
+      flex: 1; padding: 8px 12px;
+      background: none; border: none;
+      color: var(--text-muted); font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all .15s;
+    }
+    .mode-btn.active { background: var(--accent); color: #fff; }
+    .mode-btn:hover:not(.active) { color: var(--text); background: var(--border); }
+
+    /* Delete button */
+    .btn-danger { background: rgba(239,68,68,.15); color: var(--danger); border: 1px solid rgba(239,68,68,.3); }
+    .btn-danger:hover { background: rgba(239,68,68,.3); border-color: var(--danger); }
+
+    /* Toolbar row above messages */
+    .toolbar {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .toolbar-right { margin-left: auto; display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">📬</div>
+  <div class="header-title">
+    <h1>iCloud Mail Viewer</h1>
+    <p>Tra cứu OTP từ iCloud Hide My Email aliases</p>
+  </div>
+  <div class="auto-refresh-badge" id="autoRefreshBadge" onclick="toggleAutoRefresh()">
+    🔄 Tự làm mới: tắt
+  </div>
+</div>
+
+<div class="container">
+  <!-- Input card -->
+  <div class="card">
+    <div class="form-grid">
+      <div>
+        <label>Địa chỉ Email</label>
+        <textarea id="emailInput" placeholder="alias1@icloud.com&#10;alias2@icloud.com, alias3@icloud.com"></textarea>
+        <div class="hint">Nhập nhiều email, mỗi dòng một email hoặc ngăn cách bằng dấu phẩy.</div>
+      </div>
+      <div class="right-col">
+        <div class="token-wrap">
+          <label>Mã truy cập (VIEW_TOKEN)</label>
+          <input type="password" id="tokenInput" placeholder="VIEW_TOKEN" />
+        </div>
+        <div>
+          <label>Worker API URL</label>
+          <input type="text" id="apiUrlInput" value="https://read-icloud-mail-worker.tranminhquang-tmq9999.workers.dev/logs" />
+        </div>
+        <div>
+          <label>Chế độ xem</label>
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="modeLatest" onclick="setMode('latest')">⚡ Mới nhất</button>
+            <button class="mode-btn" id="modeFull" onclick="setMode('full')">📋 Tất cả</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="searchBtn" onclick="search()">
+            <span>🔍</span> Tìm mail
+          </button>
+          <button class="btn btn-secondary" id="refreshBtn" onclick="refresh()" disabled>
+            <span>↻</span> Làm mới
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar" id="statusBar" style="display:none">
+    <div class="dot" id="statusDot"></div>
+    <div class="status-item"><span>Đang xem:</span><strong id="statusEmail">—</strong></div>
+    <div class="status-item" style="margin-left:auto"><span>Cập nhật:</span><strong id="statusTime">—</strong></div>
+    <div id="loadingIndicator" style="display:none"><div class="spinner"></div></div>
+  </div>
+
+  <!-- Email tabs + toolbar -->
+  <div class="email-tabs" id="emailTabs" style="display:none"></div>
+
+  <!-- Toolbar -->
+  <div class="toolbar" id="toolbar" style="display:none">
+    <span style="font-size:13px;color:var(--text-muted)" id="msgCount"></span>
+    <div class="toolbar-right">
+      <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px;flex:none" onclick="deleteMailbox()" id="deleteMailBtn">🗑 Xóa mailbox này</button>
+      <button class="btn btn-danger" style="padding:6px 12px;font-size:12px;flex:none" onclick="deleteAll()">⚠️ Xóa tất cả</button>
+    </div>
+  </div>
+
+  <!-- Message list -->
+  <div id="messageArea">
+    <div class="empty">
+      <div class="icon">📭</div>
+      <div>Nhập địa chỉ email và VIEW_TOKEN để xem mail.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  const DEFAULT_API = 'https://read-icloud-mail-worker.tranminhquang-tmq9999.workers.dev/logs';
+  let emails = [];
+  let activeEmail = '';
+  let allMessages = {};
+  let autoRefreshTimer = null;
+  let autoRefreshOn = false;
+  let viewMode = 'latest'; // 'latest' | 'full'
+  const AUTO_REFRESH_INTERVAL = 10000; // 10s
+
+  // Persist config
+  (function loadSaved() {
+    const saved = JSON.parse(localStorage.getItem('mailviewer_cfg') || '{}');
+    if (saved.emails) document.getElementById('emailInput').value = saved.emails;
+    if (saved.token) document.getElementById('tokenInput').value = saved.token;
+    if (saved.apiUrl) document.getElementById('apiUrlInput').value = saved.apiUrl;
+  })();
+
+  function saveConfig() {
+    localStorage.setItem('mailviewer_cfg', JSON.stringify({
+      emails: document.getElementById('emailInput').value,
+      token: document.getElementById('tokenInput').value,
+      apiUrl: document.getElementById('apiUrlInput').value,
+    }));
+  }
+
+  function parseEmails(raw) {
+    return raw.split(/[\n,]+/).map(e => e.trim().toLowerCase()).filter(e => e.includes('@'));
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+
+  function decodeQP(s) {
+    if (!s) return s;
+    return s
+      .replace(/=\r?\n/g, '')
+      .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  }
+
+  function extractOTP(text) {
+    if (!text) return null;
+    const decoded = decodeQP(text);
+
+    // Priority 1: explicit OTP/code labels
+    const labeled = decoded.match(/(?:code|otp|verification code|m[aã] x[aá]c nh[aậ]n|m[aã] OTP)[^\d]{0,30}(\d{4,8})/i);
+    if (labeled) return labeled[1];
+
+    // Priority 2: standalone digit block on its own line or surrounded by whitespace
+    const standalone = decoded.match(/(?:^|\n)\s*(\d{4,8})\s*(?:\n|$)/m);
+    if (standalone) return standalone[1];
+
+    // Priority 3: digit block NOT preceded/followed by common date/year context
+    const allNums = [...decoded.matchAll(/\b(\d{4,8})\b/g)];
+    const yearLike = /(?:20\d{2}|19\d{2})/;
+    const dateLike = /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{1,2}\/\d{1,2})/i;
+    for (const m of allNums) {
+      const val = m[1];
+      // Skip years (2019-2029)
+      if (/^20[12]\d$/.test(val)) continue;
+      // Skip if surrounded by date context within 30 chars
+      const start = Math.max(0, m.index - 30);
+      const end = Math.min(decoded.length, m.index + val.length + 30);
+      const ctx = decoded.slice(start, end);
+      if (dateLike.test(ctx)) continue;
+      return val;
+    }
+    return null;
+  }
+
+  function initials(email) {
+    return (email || '?').charAt(0).toUpperCase();
+  }
+
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast ${type} show`;
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  function setMode(mode) {
+    viewMode = mode;
+    document.getElementById('modeLatest').classList.toggle('active', mode === 'latest');
+    document.getElementById('modeFull').classList.toggle('active', mode === 'full');
+    // Re-fetch if already loaded
+    if (emails.length) fetchAll();
+  }
+
+  function getBaseUrl() {
+    const raw = document.getElementById('apiUrlInput').value.trim() || DEFAULT_API;
+    // Strip /otp or /messages path if user pasted wrong URL
+    return raw.replace(/\/(otp|messages|health)$/, '/logs');
+  }
+
+  async function fetchMail(email) {
+    const token = document.getElementById('tokenInput').value.trim();
+    const apiUrl = getBaseUrl();
+    const limit = viewMode === 'latest' ? 1 : 100;
+    const url = `${apiUrl}?mail=${encodeURIComponent(email)}&mode=${viewMode}&limit=${limit}`;
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.messages || data.items || data.logs || data.emails || data.data || []);
+  }
+
+  async function deleteMailbox() {
+    if (!activeEmail) return;
+    if (!confirm(`Xóa toàn bộ mail của ${activeEmail}?`)) return;
+    const token = document.getElementById('tokenInput').value.trim();
+    const base = getBaseUrl().replace('/logs', '/messages');
+    const url = `${base}?mail=${encodeURIComponent(activeEmail)}&token=${encodeURIComponent(token)}`;
+    try {
+      const res = await fetch(url, { method: 'DELETE', headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+      const data = await res.json();
+      if (data.deleted) {
+        showToast(`✅ Đã xóa ${data.rows_deleted} mail của ${activeEmail}`);
+        allMessages[activeEmail] = [];
+        renderTabs();
+        renderMessages();
+      } else {
+        showToast('Xóa thất bại', 'error');
+      }
+    } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
+  }
+
+  async function deleteAll() {
+    if (!confirm('⚠️ Xóa TOÀN BỘ mail trong database? Không thể hoàn tác!')) return;
+    const token = document.getElementById('tokenInput').value.trim();
+    const base = getBaseUrl().replace('/logs', '/messages');
+    const url = `${base}?token=${encodeURIComponent(token)}`;
+    try {
+      const res = await fetch(url, { method: 'DELETE', headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+      const data = await res.json();
+      if (data.deleted) {
+        showToast(`✅ Đã xóa ${data.rows_deleted} mail`);
+        allMessages = {};
+        emails.forEach(e => allMessages[e] = []);
+        renderTabs();
+        renderMessages();
+      } else {
+        showToast('Xóa thất bại', 'error');
+      }
+    } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
+  }
+
+  async function search() {
+    saveConfig();
+    const raw = document.getElementById('emailInput').value;
+    emails = parseEmails(raw);
+    if (!emails.length) { showToast('Nhập ít nhất 1 email', 'error'); return; }
+
+    document.getElementById('searchBtn').disabled = true;
+    document.getElementById('refreshBtn').disabled = false;
+    document.getElementById('statusBar').style.display = 'flex';
+    document.getElementById('emailTabs').style.display = 'flex';
+    document.getElementById('loadingIndicator').style.display = 'block';
+    document.getElementById('statusDot').className = 'dot';
+
+    allMessages = {};
+    activeEmail = emails[0];
+    renderTabs();
+
+    await fetchAll();
+    document.getElementById('searchBtn').disabled = false;
+  }
+
+  async function fetchAll() {
+    document.getElementById('loadingIndicator').style.display = 'block';
+    const results = await Promise.allSettled(emails.map(e => fetchMail(e).then(msgs => { allMessages[e] = msgs; })));
+    document.getElementById('loadingIndicator').style.display = 'none';
+    document.getElementById('statusDot').className = 'dot green';
+    document.getElementById('statusTime').textContent = new Date().toLocaleTimeString('vi-VN');
+    document.getElementById('statusEmail').textContent = activeEmail;
+    renderTabs();
+    renderMessages();
+    const errors = results.filter(r => r.status === 'rejected');
+    if (errors.length) showToast(`${errors.length} email lỗi khi tải`, 'error');
+  }
+
+  async function refresh() {
+    if (!emails.length) return;
+    await fetchAll();
+  }
+
+  function renderMessages() {
+    const area = document.getElementById('messageArea');
+    const toolbar = document.getElementById('toolbar');
+    const msgs = allMessages[activeEmail] || [];
+    toolbar.style.display = msgs.length || emails.length ? 'flex' : 'none';
+    document.getElementById('deleteMailBtn').textContent = `🗑 Xóa: ${activeEmail ? activeEmail.split('@')[0] : '...'}`;
+    document.getElementById('msgCount').textContent = msgs.length ? `${msgs.length} tin nhắn${viewMode === 'latest' ? ' (mới nhất)' : ''}` : '';
+    if (!msgs.length) {
+      area.innerHTML = `<div class="empty"><div class="icon">📭</div><div>Không có mail cho <strong>${activeEmail}</strong></div></div>`;
+      return;
+    }
+    area.innerHTML = `<div class="msg-list">${msgs.map((m, i) => renderMsg(m, i)).join('')}</div>`;
+  }
+
+  function renderTabs() {
+    const container = document.getElementById('emailTabs');
+    container.innerHTML = emails.map(e => {
+      const count = (allMessages[e] || []).length;
+      return `<div class="tab ${e === activeEmail ? 'active' : ''}" onclick="selectTab('${e}')">
+        ${e.length > 28 ? e.slice(0, 25) + '…' : e}
+        ${count ? `<span class="badge">${count}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function selectTab(email) {
+    activeEmail = email;
+    document.getElementById('statusEmail').textContent = email;
+    renderTabs();
+    renderMessages();
+  }
+
+  function renderMsg(m, i) {
+    const rawBody = m.bodyText || m.text || m.bodyHtml || m.html || '';
+    const body = decodeQP(rawBody);
+    const otp = extractOTP(body);
+    const subject = m.subject || '(Không có tiêu đề)';
+    const from = m.from || m.sender || '—';
+    const time = formatTime(m.date || m.receivedAt);
+
+    return `<div class="msg-card">
+      <div class="msg-header" onclick="toggleBody(${i})">
+        <div class="msg-avatar">${initials(from)}</div>
+        <div class="msg-meta">
+          <div class="msg-subject">${escHtml(subject)}</div>
+          <div class="msg-from">${escHtml(from)}</div>
+        </div>
+        <div class="msg-time">${time}</div>
+      </div>
+      ${otp ? `<div class="otp-chip" onclick="copyOTP('${otp}')" title="Click để copy OTP">
+        ${otp} <span class="copy-icon">📋</span>
+      </div>` : ''}
+      <div class="msg-body" id="body-${i}">
+        <div class="msg-body-text">${escHtml(stripHtml(body) || body)}</div>
+      </div>
+    </div>`;
+  }
+
+  function toggleBody(i) {
+    const el = document.getElementById(`body-${i}`);
+    el.classList.toggle('open');
+  }
+
+  function copyOTP(otp) {
+    navigator.clipboard.writeText(otp).then(() => showToast(`✅ Đã copy OTP: ${otp}`));
+  }
+
+  function escHtml(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function stripHtml(s) {
+    return (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function toggleAutoRefresh() {
+    autoRefreshOn = !autoRefreshOn;
+    const badge = document.getElementById('autoRefreshBadge');
+    if (autoRefreshOn) {
+      badge.textContent = '🔄 Tự làm mới: 10s';
+      badge.classList.add('on');
+      autoRefreshTimer = setInterval(() => { if (emails.length) fetchAll(); }, AUTO_REFRESH_INTERVAL);
+      showToast('Bật tự làm mới mỗi 10 giây');
+    } else {
+      badge.textContent = '🔄 Tự làm mới: tắt';
+      badge.classList.remove('on');
+      clearInterval(autoRefreshTimer);
+      showToast('Đã tắt tự làm mới');
+    }
+  }
+
+  // Enter to search
+  document.getElementById('emailInput').addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') search();
+  });
+</script>
+</body>
+</html>
