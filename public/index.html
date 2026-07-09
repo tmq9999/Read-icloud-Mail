@@ -703,8 +703,9 @@
 
   function linkifyText(s) {
     const escaped = escHtml(s || '');
+    // `u` is already HTML-escaped, so it is safe for both attribute and text position
     return escaped.replace(/https?:\/\/[^\s\]<>"']+/g, (u) =>
-      `<a href="${escAttr(u)}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+      `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
   }
 
   function toggleBody(i) {
