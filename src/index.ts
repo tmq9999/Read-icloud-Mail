@@ -94,12 +94,46 @@ function extractOriginalRecipient(headers: EmailHeaders): string | null {
   return null;
 }
 
-function decodeQuotedPrintable(s: string): string {
+function decodeQuotedPrintable(s: string, charset = "utf-8"): string {
+  const noSoft = s.replace(/=\r?\n/g, ""); // soft line breaks (must be first)
+  const bytes: number[] = [];
+  for (let i = 0; i < noSoft.length; i++) {
+    if (noSoft[i] === "=" && /^[0-9A-Fa-f]{2}$/.test(noSoft.slice(i + 1, i + 3))) {
+      bytes.push(parseInt(noSoft.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      bytes.push(noSoft.charCodeAt(i) & 0xff);
+    }
+  }
+  return decodeBytes(new Uint8Array(bytes), charset);
+}
+
+function decodeBase64(s: string, charset = "utf-8"): string {
+  const bin = atob(s.replace(/\s/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return decodeBytes(bytes, charset);
+}
+
+function decodeBytes(bytes: Uint8Array, charset: string): string {
+  try {
+    return new TextDecoder(charset || "utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  }
+}
+
+// Decode RFC 2047 encoded-words in headers, e.g. =?UTF-8?B?...?= / =?UTF-8?Q?...?=
+function decodeMimeWords(s: string): string {
   return s
-    .replace(/=\r?\n/g, "")           // soft line breaks (must be first)
-    .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => {
-      const code = parseInt(h, 16);
-      return String.fromCharCode(code);
+    .replace(/\?=\s+=\?/g, "?==?") // join adjacent encoded-words
+    .replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (match, charset, enc, data) => {
+      try {
+        if (enc.toUpperCase() === "B") return decodeBase64(data, charset.toLowerCase());
+        return decodeQuotedPrintable(data.replace(/_/g, " "), charset.toLowerCase());
+      } catch {
+        return match;
+      }
     });
 }
 
@@ -107,6 +141,12 @@ function stripHtmlTags(s: string): string {
   return s
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    // Preserve link targets: <a href="url">text</a> -> text [url]
+    .replace(/<a\b[^>]*\bhref=["']?([^"'\s>]+)["']?[^>]*>([\s\S]*?)<\/a>/gi, (_, href, inner) => {
+      const label = inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      if (!label || label === href) return ` ${href} `;
+      return ` ${label} [${href}] `;
+    })
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|h[1-6])[^>]*>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
@@ -121,16 +161,18 @@ function stripHtmlTags(s: string): string {
     .trim();
 }
 
-function parseMimePart(part: string): { contentType: string; encoding: string; body: string } {
+function parseMimePart(part: string): { contentType: string; encoding: string; charset: string; body: string } {
   const headerEnd = part.search(/\r?\n\r?\n/);
-  if (headerEnd === -1) return { contentType: "", encoding: "", body: part };
+  if (headerEnd === -1) return { contentType: "", encoding: "", charset: "", body: part };
   const headerSection = part.slice(0, headerEnd).toLowerCase();
   const body = part.slice(headerEnd).replace(/^\r?\n\r?\n/, "");
   const ctMatch = headerSection.match(/content-type:\s*([^;\r\n]+)/);
   const encMatch = headerSection.match(/content-transfer-encoding:\s*([^\r\n]+)/);
+  const csMatch = headerSection.match(/charset="?([^"\r\n;]+)"?/);
   return {
     contentType: ctMatch ? ctMatch[1].trim() : "",
     encoding: encMatch ? encMatch[1].trim() : "",
+    charset: csMatch ? csMatch[1].trim() : "",
     body,
   };
 }
@@ -156,36 +198,41 @@ async function extractBodies(raw: ReadableStream): Promise<{ text: string; html:
     const rawText = new TextDecoder("utf-8", { fatal: false }).decode(rawBytes);
 
     // Find all boundaries (support nested multipart)
-    const boundaryMatch = rawText.match(/boundary="?([^"\r\n;]+)"?/i);
-    if (boundaryMatch) {
-      const boundary = "--" + boundaryMatch[1].trim();
-      const parts = rawText.split(boundary);
+    const boundaryMatches = [...rawText.matchAll(/boundary="?([^"\r\n;]+)"?/gi)];
+    if (boundaryMatches.length) {
+      let parts: string[] = [rawText];
+      for (const bm of boundaryMatches) {
+        const boundary = "--" + bm[1].trim();
+        parts = parts.flatMap((p) => p.split(boundary));
+      }
       for (const part of parts) {
-        const { contentType, encoding, body } = parseMimePart(part);
-        if (!contentType) continue;
+        const { contentType, encoding, charset, body } = parseMimePart(part);
+        if (!contentType || contentType.startsWith("multipart/")) continue;
         let decoded = body;
-        if (encoding === "quoted-printable") decoded = decodeQuotedPrintable(body);
+        if (encoding === "quoted-printable") decoded = decodeQuotedPrintable(body, charset);
         else if (encoding === "base64") {
-          try { decoded = atob(body.replace(/\s/g, "")); } catch { decoded = body; }
+          try { decoded = decodeBase64(body, charset); } catch { decoded = body; }
         }
         if (contentType.includes("text/plain") && !text) {
           text = decoded.trim();
         } else if (contentType.includes("text/html") && !html) {
           html = decoded.trim();
-          if (!text) text = stripHtmlTags(html);
         }
       }
+      if (!text && html) text = stripHtmlTags(html);
     }
 
     // Non-multipart single-part email
     if (!text && !html) {
       const topEncMatch = rawText.match(/content-transfer-encoding:\s*([^\r\n]+)/i);
       const topEnc = topEncMatch ? topEncMatch[1].trim().toLowerCase() : "";
+      const topCsMatch = rawText.match(/charset="?([^"\r\n;]+)"?/i);
+      const topCharset = topCsMatch ? topCsMatch[1].trim() : "";
       const bodyStart = rawText.search(/\r?\n\r?\n/);
       let body = bodyStart !== -1 ? rawText.slice(bodyStart).replace(/^\r?\n\r?\n/, "") : rawText;
-      if (topEnc === "quoted-printable") body = decodeQuotedPrintable(body);
+      if (topEnc === "quoted-printable") body = decodeQuotedPrintable(body, topCharset);
       else if (topEnc === "base64") {
-        try { body = atob(body.replace(/\s/g, "")); } catch { /* ignore */ }
+        try { body = decodeBase64(body, topCharset); } catch { /* ignore */ }
       }
       if (body.includes("<html") || body.includes("<!DOCTYPE") || body.includes("<div")) {
         html = body;
@@ -243,8 +290,8 @@ async function handleEmail(message: EmailMessage, env: Env): Promise<void> {
     return;
   }
 
-  const subject = message.headers.get("Subject") || "";
-  const sender = message.from || message.headers.get("From") || "";
+  const subject = decodeMimeWords(message.headers.get("Subject") || "");
+  const sender = decodeMimeWords(message.from || message.headers.get("From") || "");
   const receivedAt = parseReceivedAt(message.headers);
   const { text, html } = await extractBodies(message.raw);
 

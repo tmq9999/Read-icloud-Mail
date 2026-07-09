@@ -15,8 +15,8 @@
       --accent: #6366f1;
       --accent-hover: #4f52d4;
       --accent2: #22d3ee;
-      --text: #e2e2f0;
-      --text-muted: #8888aa;
+      --text: #f2f2fa;
+      --text-muted: #a8a8c8;
       --success: #22c55e;
       --warning: #f59e0b;
       --danger: #ef4444;
@@ -221,13 +221,44 @@
     }
     .msg-body.open { display: block; }
     .msg-body-text {
-      font-size: 13px; color: var(--text-muted); line-height: 1.6;
+      font-size: 14px; color: var(--text); line-height: 1.6;
       white-space: pre-wrap; word-break: break-word;
       background: var(--surface2);
       border-radius: var(--radius-sm);
       padding: 10px 12px;
-      max-height: 300px; overflow-y: auto;
+      max-height: 400px; overflow-y: auto;
     }
+    .msg-body-text a { color: var(--accent2); word-break: break-all; }
+    .msg-html-frame {
+      width: 100%; height: 480px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: #ffffff;
+    }
+    .view-toggle { display: flex; gap: 6px; margin-bottom: 8px; }
+    .view-toggle button {
+      padding: 4px 12px; font-size: 12px; font-weight: 600;
+      border-radius: 20px; border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text-muted); cursor: pointer;
+    }
+    .view-toggle button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .msg-links { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .msg-links-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+    .link-item {
+      display: block; font-size: 13px;
+      color: var(--accent2); text-decoration: none;
+      background: rgba(34,211,238,.08);
+      border: 1px solid rgba(34,211,238,.25);
+      border-radius: var(--radius-sm);
+      padding: 7px 10px;
+      word-break: break-all;
+    }
+    .link-item:hover { background: rgba(34,211,238,.18); }
+    .link-item.primary {
+      color: #fff; background: var(--accent);
+      border-color: var(--accent); font-weight: 600;
+    }
+    .link-item.primary:hover { background: var(--accent-hover); }
 
     /* Empty / loading states */
     .empty {
@@ -414,16 +445,9 @@
     return d.toLocaleString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
   }
 
-  function decodeQP(s) {
-    if (!s) return s;
-    return s
-      .replace(/=\r?\n/g, '')
-      .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-  }
-
   function extractOTP(text) {
     if (!text) return null;
-    const decoded = decodeQP(text);
+    const decoded = text;
 
     // Priority 1: explicit OTP/code labels
     const labeled = decoded.match(/(?:code|otp|verification code|m[aã] x[aá]c nh[aậ]n|m[aã] OTP)[^\d]{0,30}(\d{4,8})/i);
@@ -600,13 +624,52 @@
     renderMessages();
   }
 
+  function extractLinks(html, text) {
+    const urls = [];
+    const seen = new Set();
+    const add = (u) => {
+      u = u.replace(/[)\].,;>'"]+$/, '');
+      if (u && !seen.has(u)) { seen.add(u); urls.push(u); }
+    };
+    if (html) for (const m of html.matchAll(/href\s*=\s*["']?(https?:\/\/[^"'\s>]+)["']?/gi)) add(m[1]);
+    if (text) for (const m of text.matchAll(/https?:\/\/[^\s\]<>"']+/g)) add(m[0]);
+    return urls;
+  }
+
+  function isPrimaryLink(url) {
+    return /(verify|confirm|activate|activation|validate|signup|sign-up|create|register|epr|token|magic|reset)/i.test(url);
+  }
+
+  function sanitizeHtml(html) {
+    return (html || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  }
+
   function renderMsg(m, i) {
-    const rawBody = m.bodyText || m.text || m.bodyHtml || m.html || '';
-    const body = decodeQP(rawBody);
+    const html = m.bodyHtml || m.html || '';
+    const text = m.bodyText || m.text || '';
+    const body = text || stripHtml(html);
     const otp = extractOTP(body);
+    const links = extractLinks(html, body);
     const subject = m.subject || '(Không có tiêu đề)';
     const from = m.from || m.sender || '—';
     const time = formatTime(m.date || m.receivedAt);
+
+    const primary = links.filter(isPrimaryLink);
+    const others = links.filter(u => !isPrimaryLink(u));
+    const linksHtml = links.length ? `<div class="msg-links">
+        <div class="msg-links-title">🔗 Links (${links.length})</div>
+        ${primary.map(u => `<a class="link-item primary" href="${escAttr(u)}" target="_blank" rel="noopener noreferrer">${escHtml(u)}</a>`).join('')}
+        ${others.map(u => `<a class="link-item" href="${escAttr(u)}" target="_blank" rel="noopener noreferrer">${escHtml(u)}</a>`).join('')}
+      </div>` : '';
+
+    const htmlView = html ? `<iframe class="msg-html-frame" id="html-${i}" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="${escAttr('<base target="_blank">' + sanitizeHtml(html))}"></iframe>` : '';
+    const textView = `<div class="msg-body-text" id="text-${i}" ${html ? 'style="display:none"' : ''}>${linkifyText(body)}</div>`;
+    const toggle = html ? `<div class="view-toggle">
+        <button class="active" id="btn-html-${i}" onclick="setBodyView(${i},'html')">🖼 HTML</button>
+        <button id="btn-text-${i}" onclick="setBodyView(${i},'text')">📄 Text</button>
+      </div>` : '';
 
     return `<div class="msg-card">
       <div class="msg-header" onclick="toggleBody(${i})">
@@ -621,9 +684,27 @@
         ${otp} <span class="copy-icon">📋</span>
       </div>` : ''}
       <div class="msg-body" id="body-${i}">
-        <div class="msg-body-text">${escHtml(stripHtml(body) || body)}</div>
+        ${toggle}
+        ${htmlView}
+        ${textView}
+        ${linksHtml}
       </div>
     </div>`;
+  }
+
+  function setBodyView(i, mode) {
+    const frame = document.getElementById(`html-${i}`);
+    const text = document.getElementById(`text-${i}`);
+    if (frame) frame.style.display = mode === 'html' ? '' : 'none';
+    if (text) text.style.display = mode === 'text' ? '' : 'none';
+    document.getElementById(`btn-html-${i}`).classList.toggle('active', mode === 'html');
+    document.getElementById(`btn-text-${i}`).classList.toggle('active', mode === 'text');
+  }
+
+  function linkifyText(s) {
+    const escaped = escHtml(s || '');
+    return escaped.replace(/https?:\/\/[^\s\]<>"']+/g, (u) =>
+      `<a href="${escAttr(u)}" target="_blank" rel="noopener noreferrer">${u}</a>`);
   }
 
   function toggleBody(i) {
@@ -637,6 +718,10 @@
 
   function escHtml(s) {
     return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function escAttr(s) {
+    return escHtml(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   function stripHtml(s) {
