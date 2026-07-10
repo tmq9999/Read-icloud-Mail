@@ -81,17 +81,18 @@ function extractOriginalRecipient(headers: EmailHeaders): string | null {
     headers.get("Envelope-To"),
     headers.get("X-Forwarded-To"),
     headers.get("To"),
+    headers.get("Cc"),
   ];
+  const found: string[] = [];
   for (const c of candidates) {
-    if (c && c !== "Hide My Email") {
-      const match = c.match(/<([^>]+)>/);
-      const email = match ? match[1] : c;
-      if (email.includes("@")) {
-        return email.trim().toLowerCase();
-      }
+    if (!c || c === "Hide My Email") continue;
+    for (const m of c.matchAll(/[A-Za-z0-9._%+=-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {
+      found.push(m[0].trim().toLowerCase());
     }
   }
-  return null;
+  // Prefer an iCloud alias (the HME address the user searches by)
+  const icloud = found.find((e) => e.endsWith("@icloud.com") || e.endsWith("@privaterelay.appleid.com"));
+  return icloud || found[0] || null;
 }
 
 function decodeQuotedPrintable(s: string, charset = "utf-8"): string {
@@ -284,11 +285,9 @@ async function cleanupOldMessages(db: D1Database, retentionDays: number): Promis
 }
 
 async function handleEmail(message: EmailMessage, env: Env): Promise<void> {
-  const recipient = extractOriginalRecipient(message.headers);
-  if (!recipient) {
-    message.setReject("Cannot determine original recipient");
-    return;
-  }
+  // Never reject: fall back to the actual envelope recipient so no mail is lost
+  const recipient = extractOriginalRecipient(message.headers) || (message.to || "").trim().toLowerCase();
+  if (!recipient) return;
 
   const subject = decodeMimeWords(message.headers.get("Subject") || "");
   const sender = decodeMimeWords(message.from || message.headers.get("From") || "");
