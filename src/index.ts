@@ -303,6 +303,12 @@ async function handleEmail(message: EmailMessage, env: Env): Promise<void> {
   }
 }
 
+// URL query decoding turns unencoded '+' into spaces; spaces are invalid in
+// email addresses, so map them back to support plus-addressing on any domain.
+function normalizeMailbox(raw: string | null): string {
+  return (raw || "").trim().replace(/ /g, "+").toLowerCase();
+}
+
 function authCheck(request: Request, url: URL, env: Env): boolean {
   const authHeader = request.headers.get("Authorization") || "";
   const queryToken = url.searchParams.get("token") || "";
@@ -319,7 +325,7 @@ async function handleLogsRequest(request: Request, env: Env): Promise<Response> 
   }
 
   const url = new URL(request.url);
-  const mailbox = (url.searchParams.get("mail") || "").trim().toLowerCase();
+  const mailbox = normalizeMailbox(url.searchParams.get("mail"));
   if (!mailbox || !mailbox.includes("@")) {
     return errorResponse("Missing or invalid ?mail= parameter", 422);
   }
@@ -375,7 +381,7 @@ async function handleDeleteRequest(request: Request, env: Env): Promise<Response
   const url = new URL(request.url);
   if (!authCheck(request, url, env)) return errorResponse("Unauthorized", 401);
 
-  const mailbox = (url.searchParams.get("mail") || "").trim().toLowerCase();
+  const mailbox = normalizeMailbox(url.searchParams.get("mail"));
 
   try {
     if (mailbox && mailbox.includes("@")) {
@@ -431,7 +437,7 @@ async function handleOtpRequest(request: Request, env: Env): Promise<Response> {
   }
 
   const url = new URL(request.url);
-  const mailbox = (url.searchParams.get("mail") || "").trim().toLowerCase();
+  const mailbox = normalizeMailbox(url.searchParams.get("mail"));
   if (!mailbox || !mailbox.includes("@")) {
     return errorResponse("Missing or invalid ?mail= parameter", 422);
   }
