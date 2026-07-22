@@ -1,346 +1,219 @@
-# 📬 Read iCloud Mail Worker
+# 📬 TempMail — Hộp thư tạm thời (Cloudflare Worker)
 
-Cloudflare Worker để nhận, lưu trữ và tra cứu email từ **iCloud Hide My Email aliases** — kèm frontend web và REST API để tích hợp tool tự động.
+Dịch vụ **tempmail công khai** chạy trên Cloudflare Workers + D1: tạo địa chỉ email dùng một lần và đọc thư/OTP nhận về ngay trên web, **không cần đăng nhập hay nhập token**. Kèm **trang quản trị** bảo mật để theo dõi và quản lý hệ thống.
+
+> Live: `https://read-icloud-mail-worker.tranminhquang-tmq9999.workers.dev`
+> Truy cập được qua mọi custom domain đã gắn: `https://tempmail.<domain>` (Workers Custom Domains).
+
+---
 
 ## ✨ Tính năng
 
-- **Email Routing**: Nhận mail từ iCloud Hide My Email qua Cloudflare Email Routing
-- **D1 Database**: Lưu trữ email trong Cloudflare D1 (SQLite serverless)
-- **Parse thông minh**: Tự động decode `quoted-printable`, strip HTML, trích xuất OTP
-- **REST API**: Tra cứu mail, lấy OTP mới nhất, xóa mail — bảo vệ bằng `VIEW_TOKEN`
-- **Frontend Web**: Giao diện dark mode hiện đại, hỗ trợ multi-alias, auto-refresh
-- **OTP Detection**: Phát hiện mã OTP tự động, tránh nhầm năm/ngày tháng
+- **Trang công khai, không cần token** — ai mở web cũng dùng được ngay (API gọi cùng origin).
+- **Giao diện Apple Mail 3 khung** (light) — sidebar hộp thư · danh sách thư · khung đọc; responsive mobile.
+- **2 cách tạo địa chỉ:**
+  - **Domain** — username sinh từ faker.js (CDN + fallback offline) `@` domain ngẫu nhiên lấy từ danh sách zone Cloudflare (`GET /zones`).
+  - **Gmail** — random một Gmail gốc trong hệ thống rồi sinh **biến thể dấu chấm** (`a.d.min@gmail.com`) hoặc **+alias** (`admin+x7k2@gmail.com`). Không cho gõ Gmail ngoài hệ thống.
+- **Đọc thư realtime** — tự làm mới 10s (tạm dừng khi ẩn tab), badge chưa đọc theo từng hộp.
+- **Tự nhận diện OTP** — trích mã 4–8 số theo ngữ cảnh (ưu tiên có nhãn → số đứng riêng → loại năm/ngày), nổi bật + chép một chạm.
+- **Xem HTML an toàn** — render trong `iframe sandbox`, lọc `<script>`/`on*=`; chuyển HTML ↔ văn bản; giải mã base64 fallback.
+- **Trang Admin** (`/admin`) — dashboard số liệu, danh sách địa chỉ đã tạo (kèm **IP người tạo**), thư nhận, quản lý Gmail hệ thống, khóa IP, xóa toàn bộ thư.
+
+---
 
 ## 🏗️ Kiến trúc
 
 ```
-iCloud Hide My Email alias
-        │
-        ▼ forward
-  benobaty.online (custom domain)
-        │
-        ▼ Cloudflare Email Routing
-  read-icloud-mail-worker (Worker)
-        │
-        ├──▶ D1 Database (lưu email)
-        │
-        └──▶ REST API (/logs, /otp, /messages)
-                      │
-                      ▼
-              Frontend Web UI
+                    ┌────────────────────────────────────────────┐
+   Người dùng ──▶   │  Cloudflare Worker (src/index.ts)            │
+   (trình duyệt)    │   • GET /            → public/index.html     │
+                    │   • GET /logs /otp /zones /gmails  (public)  │
+                    │   • POST /register                 (public)  │
+                    │   • DELETE /messages?mail=         (public)  │
+                    │   • /admin/*         → auth phiên (admin)    │
+                    └───────────────┬──────────────────────────────┘
+                                    │  D1 (SQLite)
+                                    ▼
+        messages · addresses · gmail_accounts · admin_config · login_attempts
+
+   Email đến ──▶  Cloudflare Email Routing / Gmail forward / iCloud HME
+              ──▶  Worker email() handler  ──▶  D1
 ```
 
-## 🚀 Triển khai từ đầu
+- **Runtime:** Cloudflare Workers (`compatibility_date` trong `wrangler.toml`).
+- **Lưu trữ:** D1 database `icloud-otp-mail-db` (binding `DB_OTP_MAIL`).
+- **UI:** phục vụ qua Workers Assets (`public/`), trừ `/admin` do Worker render trực tiếp (no-store).
+- **Nhận mail:** handler `email()` phân tích MIME (multipart, quoted-printable, base64, RFC 2047), trích người nhận gốc từ header (`X-ICLOUD-HME`, `Delivered-To`, `To`, …; nhận diện iCloud & Gmail) rồi lưu vào bảng `messages` kèm `recipient_canonical`.
 
-### Yêu cầu
+---
 
-- [Node.js](https://nodejs.org/) >= 18
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) >= 3
-- Tài khoản Cloudflare với domain được quản lý
-- Tài khoản iCloud với Hide My Email
+## 📁 Cấu trúc
 
-### 1. Clone & cài đặt
+```
+├── src/
+│   ├── index.ts        # Backend: routes, xử lý mail, admin auth
+│   └── admin_html.ts   # Trang admin (SPA, phục vụ tại /admin)
+├── public/
+│   └── index.html      # Giao diện tempmail công khai (self-contained)
+├── migrations/
+│   ├── 0001_initial.sql   # bảng messages
+│   ├── 0002_admin.sql     # addresses, login_attempts, admin_config
+│   └── 0003_gmail.sql     # gmail_accounts + messages.recipient_canonical
+├── wrangler.toml
+├── package.json
+└── tsconfig.json
+```
+
+### Schema D1 (tóm tắt)
+
+| Bảng | Vai trò |
+|---|---|
+| `messages` | Thư nhận được (recipient, sender, subject, body_text/html, received_at, **recipient_canonical**) |
+| `addresses` | Địa chỉ người dùng đã tạo (email PK, domain, **ip**, user_agent, created_at, last_seen, hits) |
+| `gmail_accounts` | Gmail gốc đã forward vào hệ thống (email PK, note, active) |
+| `admin_config` | Cấu hình admin dạng key/value (vd `allowed_ips`) |
+| `login_attempts` | Log đăng nhập cho rate-limit |
+
+---
+
+## 🔌 API
+
+### Công khai (không cần token)
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | `/` | Giao diện tempmail |
+| GET | `/logs?mail=&mode=latest\|full&limit=` | Đọc thư của một địa chỉ |
+| GET | `/otp?mail=&after=ISO&scan=` | Lấy OTP mới nhất |
+| GET | `/zones` | Danh sách domain Cloudflare (cho generator) |
+| GET | `/gmails` | Danh sách Gmail gốc active (cho generator) |
+| POST | `/register` `{email}` | Ghi log địa chỉ vừa tạo + IP người tạo |
+| DELETE | `/messages?mail=` | Xóa thư của **một** địa chỉ (bắt buộc `mail`) |
+| GET | `/health` | Kiểm tra trạng thái |
+
+> Địa chỉ Gmail được khớp theo **canonical** ở `/logs`, `/otp`, `/messages` (bỏ dấu chấm + phần sau `+`).
+
+### Quản trị (bắt buộc phiên đăng nhập)
+| Method | Path | Mô tả |
+|---|---|---|
+| GET | `/admin` | Trang quản trị |
+| POST | `/admin/login` `{username,password}` | Đăng nhập → cookie phiên |
+| POST | `/admin/logout` | Đăng xuất |
+| GET | `/admin/api/session` | Kiểm tra phiên |
+| GET | `/admin/api/stats` | Số liệu dashboard |
+| GET | `/admin/api/addresses` | Địa chỉ đã tạo (email, domain, IP, số lần, thời gian) |
+| GET / DELETE | `/admin/api/messages` | Danh sách thư / xóa **toàn bộ** thư |
+| GET / POST | `/admin/api/gmail` | Quản lý Gmail gốc (add/toggle/delete) |
+| GET / POST | `/admin/api/security` | Xem/đặt danh sách IP được phép |
+
+---
+
+## 📧 Cơ chế Gmail tempmail
+
+Gmail bỏ qua dấu chấm và mọi thứ sau dấu `+`, nên `admin@gmail.com`, `a.d.min@gmail.com`, `admin+abc@gmail.com` đều về **chung một hộp thư**. Hệ thống tận dụng điều này:
+
+1. Admin thêm Gmail gốc (đã bật **auto-forward** về worker) trong tab *Gmail hệ thống*.
+2. Web random một Gmail gốc + sinh biến thể chấm/+alias để người dùng đăng ký dịch vụ.
+3. Mail gửi tới biến thể → về hộp Gmail gốc → forward về worker → lưu D1.
+4. Khi đọc, worker khớp theo **canonical** (bỏ chấm + phần `+`, chuẩn hóa `gmail.com`) nên mọi biến thể của một Gmail gốc gộp về một hộp — **không bao giờ mất OTP**.
+
+---
+
+## 🔐 Bảo mật
+
+- Trang công khai chỉ cho **đọc/tạo**; **xóa toàn bộ** database chỉ thực hiện trong admin.
+- Admin: đăng nhập user/pass (**không đăng ký**), phiên bằng cookie **HttpOnly + Secure + SameSite=Strict** ký **HMAC-SHA256**, TTL 24h; so sánh mật khẩu **constant-time**; **rate-limit** 8 lần thất bại/15 phút theo IP.
+- **Khóa IP** (tùy chọn): khi bật, mọi route `/admin` trả **404** cho IP không nằm trong danh sách (ẩn hoàn toàn sự tồn tại của admin).
+- Header bảo mật cho admin: `no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`.
+
+---
+
+## 🚀 Cài đặt & Deploy
+
+Yêu cầu: Node.js ≥ 18, Wrangler ≥ 3, tài khoản Cloudflare (Workers + D1 + Email Routing).
 
 ```bash
 git clone https://github.com/tmq9999/Read-icloud-Mail.git
 cd Read-icloud-Mail
 npm install
+npx wrangler login            # hoặc export CLOUDFLARE_API_TOKEN
+
+# Tạo D1 rồi điền database_id vào wrangler.toml
+npx wrangler d1 create icloud-otp-mail-db
+
+# Áp dụng schema cho D1 (remote)
+npx wrangler d1 execute icloud-otp-mail-db --remote --yes --file=migrations/0001_initial.sql
+npx wrangler d1 execute icloud-otp-mail-db --remote --yes --file=migrations/0002_admin.sql
+npx wrangler d1 execute icloud-otp-mail-db --remote --yes --file=migrations/0003_gmail.sql
+
+# Secrets
+npx wrangler secret put ADMIN_USERNAME
+npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put SESSION_SECRET     # chuỗi ngẫu nhiên đủ dài (vd: openssl rand -hex 32)
+npx wrangler secret put CF_API_TOKEN       # token Cloudflare quyền Zone:Read (cho /zones)
+
+# Deploy
+npx wrangler deploy
 ```
 
-### 2. Cấu hình `wrangler.toml`
+### Email Routing & Gmail forward
+- **Cloudflare Email Routing**: bật cho domain → tạo *Catch-all route* → **Send to Worker** → `read-icloud-mail-worker`.
+- **Gmail**: Settings → Forwarding → thêm địa chỉ chuyển tiếp trỏ về một địa chỉ đang route vào worker; mã xác nhận forward sẽ hiện trong admin (*Thư đã nhận*). Sau đó thêm Gmail gốc trong admin (*Gmail hệ thống*).
+- **Custom domain**: dùng Workers Custom Domains để trỏ `tempmail.<domain>` vào worker (tự tạo DNS + SSL).
 
-```toml
-name = "read-icloud-mail-worker"
-main = "src/index.ts"
-compatibility_date = "2024-06-20"
-account_id = "YOUR_CLOUDFLARE_ACCOUNT_ID"   # thay bằng account ID của bạn
-
-[assets]
-directory = "./public"
-
-[[d1_databases]]
-binding = "DB_OTP_MAIL"
-database_name = "icloud-otp-mail-db"
-database_id = "YOUR_D1_DATABASE_ID"          # điền sau bước tạo D1
-
-[vars]
-LOG_RETENTION_DAYS = "7"
-MAX_MESSAGES_PER_MAILBOX = "100"
-```
-
-### 3. Tạo D1 database
-
-```bash
-wrangler d1 create icloud-otp-mail-db
-```
-
-Copy `database_id` từ output vào `wrangler.toml`.
-
-### 4. Chạy migration
-
-```bash
-wrangler d1 execute icloud-otp-mail-db --remote --file=migrations/0001_initial.sql --yes
-```
-
-### 5. Deploy Worker
-
-```bash
-wrangler deploy
-```
-
-### 6. Đặt secret VIEW_TOKEN
-
-```bash
-wrangler secret put VIEW_TOKEN
-# Nhập token bí mật của bạn, ví dụ: MySecureToken2024!
-```
-
-### 7. Cấu hình Cloudflare Email Routing
-
-1. Vào **Cloudflare Dashboard → Email → Email Routing**
-2. Bật Email Routing cho domain của bạn
-3. Tạo **Catch-all route**: Action = **Send to Worker** → chọn `read-icloud-mail-worker`
-
-### 8. Cấu hình iCloud Mail forwarding
-
-1. Mở **iCloud Mail** trên web hoặc macOS Mail
-2. Vào **Settings → Rules → Add a Rule**
-3. Tạo rule: **From** contains `@` → **Forward to** `inbox@yourdomain.com`
-4. Xác nhận forwarding qua email verification của iCloud
-
-> Worker sẽ đọc header `X-ICLOUD-HME` để trích xuất alias gốc (ví dụ: `fletch.rooftop2a@icloud.com`).
+### Secrets & Vars
+| Tên | Loại | Dùng cho |
+|---|---|---|
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Secret | Đăng nhập `/admin` |
+| `SESSION_SECRET` | Secret | Ký cookie phiên (HMAC) |
+| `CF_API_TOKEN` | Secret | Liệt kê domain cho `/zones` (chỉ cần **Zone:Read**) |
+| `VIEW_TOKEN` | Secret (legacy) | Không còn bắt buộc ở chế độ công khai |
+| `LOG_RETENTION_DAYS` | Var | Số ngày giữ thư (mặc định `7`) |
+| `MAX_MESSAGES_PER_MAILBOX` | Var | Giới hạn thư trả về mỗi hộp (mặc định `100`) |
 
 ---
 
-## 🔌 REST API
-
-Tất cả endpoint đều yêu cầu xác thực qua:
-- Header: `Authorization: Bearer <VIEW_TOKEN>`
-- Hoặc query param: `?token=<VIEW_TOKEN>`
-
-### `GET /logs` — Lấy danh sách email
-
-| Param | Mô tả | Mặc định |
-|-------|-------|---------|
-| `mail` | *(bắt buộc)* Địa chỉ email alias | — |
-| `mode` | `latest` (1 mail mới nhất) hoặc `full` (tất cả) | `full` |
-| `limit` | Số lượng tối đa khi `mode=full` | `100` |
-
-```bash
-# Lấy tất cả mail
-curl "https://your-worker.workers.dev/logs?mail=alias@icloud.com" \
-  -H "Authorization: Bearer MyToken"
-
-# Chỉ lấy mail mới nhất
-curl "https://your-worker.workers.dev/logs?mail=alias@icloud.com&mode=latest" \
-  -H "Authorization: Bearer MyToken"
-```
-
-**Response:**
-```json
-{
-  "messages": [
-    {
-      "id": 42,
-      "to": "alias@icloud.com",
-      "from": "noreply@tm.openai.com",
-      "subject": "Your temporary ChatGPT verification code",
-      "bodyText": "Enter this code: 085747",
-      "date": "2026-06-27T06:34:16.000Z",
-      "receivedAt": "2026-06-27T06:34:16.000Z"
-    }
-  ],
-  "mode": "full",
-  "total": 1
-}
-```
-
----
-
-### `GET /otp` — Lấy OTP mới nhất
-
-| Param | Mô tả | Mặc định |
-|-------|-------|---------|
-| `mail` | *(bắt buộc)* Địa chỉ email alias | — |
-| `after` | Chỉ xét email nhận sau timestamp này (ISO 8601) | — |
-| `scan` | Số email gần nhất để quét tìm OTP | `5` |
-
-```bash
-# Lấy OTP mới nhất
-curl "https://your-worker.workers.dev/otp?mail=alias@icloud.com" \
-  -H "Authorization: Bearer MyToken"
-
-# Chỉ lấy OTP nhận sau 1 thời điểm (dùng cho automation)
-curl "https://your-worker.workers.dev/otp?mail=alias@icloud.com&after=2026-06-27T10:00:00Z" \
-  -H "Authorization: Bearer MyToken"
-```
-
-**Response khi có OTP:**
-```json
-{
-  "otp": "085747",
-  "mail": "alias@icloud.com",
-  "message_id": 42,
-  "subject": "Your temporary ChatGPT verification code",
-  "received_at": "2026-06-27T06:34:16.000Z"
-}
-```
-
-**Response khi không tìm thấy (HTTP 404):**
-```json
-{
-  "otp": null,
-  "mail": "alias@icloud.com",
-  "message": "No OTP found in recent emails"
-}
-```
-
----
-
-### `DELETE /messages` — Xóa email
-
-```bash
-# Xóa toàn bộ mail của 1 alias
-curl -X DELETE "https://your-worker.workers.dev/messages?mail=alias@icloud.com" \
-  -H "Authorization: Bearer MyToken"
-
-# Xóa TẤT CẢ mail trong database
-curl -X DELETE "https://your-worker.workers.dev/messages" \
-  -H "Authorization: Bearer MyToken"
-```
-
-**Response:**
-```json
-{
-  "deleted": true,
-  "mail": "alias@icloud.com",
-  "rows_deleted": 11
-}
-```
-
----
-
-### `GET /health` — Kiểm tra trạng thái
-
-```bash
-curl "https://your-worker.workers.dev/health"
-```
-
-```json
-{
-  "ok": true,
-  "worker": "read-icloud-mail-worker",
-  "endpoints": {
-    "GET /logs": "?mail=&mode=latest|full&limit=&token=",
-    "GET /otp": "?mail=&after=ISO&scan=5&token=",
-    "DELETE /messages": "?mail= (omit for all)&token=",
-    "GET /health": "status check"
-  }
-}
-```
-
----
-
-## 🐍 Tích hợp Python (ví dụ)
+## 🐍 Tích hợp automation (ví dụ, không cần token)
 
 ```python
-import requests
-import time
+import requests, time
 
-WORKER_URL = "https://your-worker.workers.dev"
-VIEW_TOKEN  = "MySecureToken2024!"
-HEADERS     = {"Authorization": f"Bearer {VIEW_TOKEN}"}
+BASE = "https://read-icloud-mail-worker.tranminhquang-tmq9999.workers.dev"
 
-def get_latest_otp(alias: str, after: str = None, retries: int = 10, delay: float = 3.0):
-    """Poll OTP sau khi trigger signup. after = ISO timestamp trước khi gửi request."""
-    params = {"mail": alias, "scan": 10}
+def get_latest_otp(mail, after=None, retries=10, delay=3.0):
+    params = {"mail": mail, "scan": 10}
     if after:
         params["after"] = after
     for _ in range(retries):
-        resp = requests.get(f"{WORKER_URL}/otp", params=params, headers=HEADERS)
-        data = resp.json()
+        data = requests.get(f"{BASE}/otp", params=params).json()
         if data.get("otp"):
             return data["otp"]
         time.sleep(delay)
     return None
 
-# Ví dụ sử dụng
-start_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-# ... trigger signup / login ...
-otp = get_latest_otp("alias@icloud.com", after=start_time)
-print(f"OTP: {otp}")
+start = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+# ... trigger signup/login tới địa chỉ tempmail ...
+print("OTP:", get_latest_otp("a.d.min@gmail.com", after=start))
 ```
 
 ---
 
-## 🖥️ Frontend Web
+## 🛠️ Phát triển
 
-Truy cập tại: `https://your-worker.workers.dev/`
-
-### Tính năng UI
-- **Multi-alias**: Nhập nhiều email (mỗi dòng hoặc ngăn cách bằng dấu phẩy)
-- **Chế độ xem**:
-  - ⚡ **Mới nhất** — chỉ hiển thị email gần nhất mỗi alias
-  - 📋 **Tất cả** — hiển thị toàn bộ lịch sử
-- **OTP chip**: Tự động phát hiện và hiển thị OTP nổi bật, click để copy
-- **Xóa mail**: Xóa theo mailbox hoặc xóa toàn bộ DB
-- **Auto-refresh**: Tự động làm mới mỗi 10 giây (toggle bật/tắt)
-- **Lưu config**: Token và danh sách email được lưu `localStorage`
-
----
-
-## 📁 Cấu trúc dự án
-
-```
-read-icloud-mail-worker/
-├── src/
-│   └── index.ts          # Worker chính: email handler + HTTP API
-├── public/
-│   └── index.html        # Frontend web SPA
-├── migrations/
-│   └── 0001_initial.sql  # D1 schema
-├── wrangler.toml         # Cấu hình Cloudflare Worker
-├── package.json
-├── tsconfig.json
-└── README.md
+```bash
+npx wrangler dev      # chạy local
 ```
 
-### Schema D1
-
-```sql
-CREATE TABLE messages (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  recipient   TEXT NOT NULL,      -- alias gốc (X-ICLOUD-HME header)
-  sender      TEXT,
-  subject     TEXT,
-  body_text   TEXT,               -- plain text, đã decode QP
-  body_html   TEXT,
-  received_at TEXT NOT NULL,      -- ISO 8601
-  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-```
+`public/index.html` và `src/admin_html.ts` đều **self-contained** (CSS/JS inline, vanilla, không build step). Sửa xong chạy `npx wrangler deploy`.
 
 ---
 
-## ⚙️ Biến môi trường
+## 📜 Lịch sử thay đổi
 
-| Tên | Loại | Mô tả |
-|-----|------|-------|
-| `VIEW_TOKEN` | Secret | Token xác thực API (đặt qua `wrangler secret put`) |
-| `LOG_RETENTION_DAYS` | Var | Số ngày giữ mail (mặc định: `7`) |
-| `MAX_MESSAGES_PER_MAILBOX` | Var | Giới hạn mail mỗi mailbox (mặc định: `100`) |
+- **UI redesign** — chuyển sang phong cách Apple Mail 3 khung (light).
+- **Admin panel** — tracking địa chỉ + IP, dashboard, quản lý, bảo mật phiên + khóa IP.
+- **Gmail tempmail** — dot-trick + plus-alias, khớp canonical khi đọc.
+- **Public mode** — bỏ VIEW_TOKEN/Worker URL ở client; đọc/tạo công khai, xóa toàn bộ chỉ trong admin.
 
----
-
-## 🔒 Bảo mật
-
-- `VIEW_TOKEN` được lưu dưới dạng **Cloudflare Secret** (không xuất hiện trong code hay logs)
-- Tất cả API endpoint đều yêu cầu token
-- Nên **revoke Cloudflare API token** sau khi deploy xong
-- Không commit `VIEW_TOKEN` hay API token vào repository
-
----
-
-## 📜 License
+## License
 
 MIT
