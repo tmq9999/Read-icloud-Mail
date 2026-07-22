@@ -153,6 +153,10 @@
     background-repeat: no-repeat; background-position: right 8px center; }
   .gen select:disabled { color: var(--text3); }
   .gen .hint { font-size: 10.5px; color: var(--text3); margin: -2px 0 7px 2px; }
+  .gen-seg { display: flex; background: var(--paper2); border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; margin-bottom: 9px; }
+  .gen-seg button { flex: 1; font-family: var(--font); font-size: 12.5px; font-weight: 600; border: none; background: transparent; color: var(--text2); padding: 6px 0; cursor: pointer; transition: all .12s; }
+  .gen-seg button.active { background: #fff; color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
+  .gen-seg button:not(.active):hover { color: var(--text); }
   .gen .row { display: flex; flex-direction: column; gap: 7px; }
   .gen .row .pbtn { flex: none; width: 100%; min-width: 0; }
   @media (max-width: 1020px) {
@@ -426,7 +430,6 @@
   <div class="titlebar">
     <div class="lights"><span class="light c"></span><span class="light m"></span><span class="light z"></span></div>
     <div class="win-title">TempMail <span class="sub">— Hộp thư tạm thời</span></div>
-    <span class="conn" id="connPill" title="Trạng thái kết nối — bấm để mở cài đặt"><span class="cdot"></span><span id="connLbl">Chưa cấu hình</span></span>
     <div class="tb-spacer"></div>
     <button class="tb-btn" id="tbRefresh" title="Kiểm tra thư mới">
       <svg id="refreshIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
@@ -436,34 +439,48 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
       <span id="tbPollLbl">Tự động: BẬT</span>
     </button>
-    <button class="tb-btn" id="tbSettings" title="Cài đặt kết nối">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      Cài đặt
-    </button>
   </div>
 
   <div class="layout">
 
     <aside class="sidebar">
-      <div class="side-label">Tạo địa chỉ mới <span class="re" id="reloadZones" title="Tải lại danh sách domain">↻ domain</span></div>
+      <div class="side-label">Tạo địa chỉ mới <span class="re" id="reloadZones" title="Tải lại danh sách domain / gmail">↻</span></div>
       <div class="gen">
-        <div class="fld">
-          <input id="genUser" type="text" placeholder="username — trống = faker" spellcheck="false" autocomplete="off"/>
+        <div class="gen-seg">
+          <button id="modeDomain" class="active" type="button">Domain</button>
+          <button id="modeGmail" type="button">Gmail</button>
         </div>
-        <div class="fld">
-          <span class="at">@</span>
-          <select id="genDomain" disabled><option>— đang tải domain… —</option></select>
+
+        <div id="genDomainView">
+          <div class="fld">
+            <input id="genUser" type="text" placeholder="username — trống = faker" spellcheck="false" autocomplete="off"/>
+          </div>
+          <div class="fld">
+            <span class="at">@</span>
+            <select id="genDomain" disabled><option>— đang tải domain… —</option></select>
+          </div>
+          <div class="hint">Mẹo: dán cả địa chỉ có @ (vd alias iCloud) để thêm trực tiếp.</div>
+          <div class="row">
+            <button class="pbtn" id="btnRandom">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="m4 4 5 5"/></svg>
+              Ngẫu nhiên
+            </button>
+            <button class="pbtn primary" id="btnCreate">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Tạo &amp; Chép
+            </button>
+          </div>
         </div>
-        <div class="hint">Mẹo: dán cả địa chỉ có @ (vd alias iCloud) để thêm trực tiếp.</div>
-        <div class="row">
-          <button class="pbtn" id="btnRandom">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="m4 4 5 5"/></svg>
-            Ngẫu nhiên
-          </button>
-          <button class="pbtn primary" id="btnCreate">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-            Tạo &amp; Chép
-          </button>
+
+        <div id="genGmailView" style="display:none">
+          <div class="hint" id="gmailInfo" style="margin:2px 0 8px 2px">Đang tải danh sách Gmail…</div>
+          <div class="row">
+            <button class="pbtn primary" id="btnGmailRandom">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="m4 4 5 5"/></svg>
+              Random Gmail &amp; Chép
+            </button>
+          </div>
+          <div class="hint">Sinh biến thể (dấu chấm hoặc +alias) từ Gmail có trong hệ thống. Thêm Gmail gốc trong trang admin.</div>
         </div>
       </div>
 
@@ -478,23 +495,6 @@
   <div class="footbar" id="footbar">Đang khởi động…</div>
 </div>
 
-<div class="overlay" id="settingsOverlay">
-  <div class="modal">
-    <div class="mtitle">Cài đặt kết nối</div>
-    <div class="mbody">
-      <label>Mã truy cập (VIEW_TOKEN)</label>
-      <div class="fld"><input id="cfgToken" type="password" placeholder="Dán VIEW_TOKEN của worker" spellcheck="false"/></div>
-      <label>Worker API URL</label>
-      <div class="fld"><input id="cfgApi" type="text" placeholder="Mặc định: cùng địa chỉ trang này" spellcheck="false"/></div>
-      <div class="note">Token dùng để đọc thư (<b>/logs</b>), tải domain (<b>/zones</b>) và xóa thư (<b>/messages</b>). Lưu cục bộ trên trình duyệt của bạn.</div>
-    </div>
-    <div class="mfoot">
-      <button class="pbtn" id="settingsCancel">Hủy</button>
-      <button class="pbtn primary" id="settingsSave">Lưu &amp; Kết nối</button>
-    </div>
-  </div>
-</div>
-
 <div class="toasts" id="toasts"></div>
 
 <script>
@@ -505,8 +505,7 @@
   var POLL_MS = 10000;
 
   /* ── Config & state ────────────────────────── */
-  var LS_CFG = 'tmv3_cfg', LS_BOXES = 'tmv3_boxes', LS_READ = 'tmv3_read', LS_ZONES = 'tmv3_zones';
-  var cfg = { token: '', api: '' };
+  var LS_BOXES = 'tmv3_boxes', LS_READ = 'tmv3_read', LS_ZONES = 'tmv3_zones';
   var state = {
     boxes: [],            // [{email, created}]
     active: null,
@@ -515,6 +514,8 @@
     poll: true,
     query: '',
     zones: [],
+    gmails: [],           // base gmail accounts trong hệ thống
+    mode: 'domain',       // 'domain' | 'gmail'
     cache: {},            // email -> [msgs]
     fetched: {},          // email -> đã fetch ít nhất 1 lần
     read: {},             // email -> {msgId: 1}
@@ -528,45 +529,36 @@
   function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
 
   function loadState(){
-    cfg = lsGet(LS_CFG, null) || { token:'', api:'' };
     state.boxes = lsGet(LS_BOXES, []);
     state.read = lsGet(LS_READ, {});
     state.zones = lsGet(LS_ZONES, []);
-    // Migrate cấu hình từ UI cũ (mailviewer_cfg)
-    if (!cfg.token) {
+    state.gmails = lsGet('tmv3_gmails', []);
+    state.mode = lsGet('tmv3_mode', 'domain');
+    // Migrate danh sách email từ UI cũ (mailviewer_cfg) nếu chưa có hộp thư nào
+    if (!state.boxes.length) {
       var old = lsGet('mailviewer_cfg', null);
-      if (old) {
-        if (old.token) cfg.token = old.token;
-        if (old.apiUrl) cfg.api = String(old.apiUrl).replace(/\/(logs|otp|messages|health|zones)\/?$/, '');
-        if (old.emails && !state.boxes.length) {
-          String(old.emails).split(/[\n,]+/).forEach(function(e){
-            e = e.trim().toLowerCase();
-            if (e.indexOf('@') > 0) state.boxes.push({ email: e, created: Date.now() });
-          });
-        }
-        lsSet(LS_CFG, cfg); lsSet(LS_BOXES, state.boxes);
+      if (old && old.emails) {
+        String(old.emails).split(/[\n,]+/).forEach(function(e){
+          e = e.trim().toLowerCase();
+          if (e.indexOf('@') > 0) state.boxes.push({ email: e, created: Date.now() });
+        });
+        lsSet(LS_BOXES, state.boxes);
       }
     }
   }
   function saveBoxes(){ lsSet(LS_BOXES, state.boxes); }
   function saveRead(){ lsSet(LS_READ, state.read); }
 
-  function apiBase(){
-    var b = (cfg.api || '').trim() || location.origin;
-    return b.replace(/\/+$/, '');
-  }
+  // Public tempmail: API cùng origin, không cần token.
   function apiUrl(path, params){
-    var u = apiBase() + path, q = [];
+    var u = location.origin + path, q = [];
     params = params || {};
     Object.keys(params).forEach(function(k){
       if (params[k] !== undefined && params[k] !== null && params[k] !== '') q.push(encodeURIComponent(k)+'='+encodeURIComponent(params[k]));
     });
-    if (cfg.token) q.push('token='+encodeURIComponent(cfg.token));
     return u + (q.length ? '?'+q.join('&') : '');
   }
-  function apiHeaders(){
-    return cfg.token ? { 'Authorization': 'Bearer '+cfg.token } : {};
-  }
+  function apiHeaders(){ return {}; }
 
   /* ── Utils ─────────────────────────────────── */
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
@@ -734,23 +726,12 @@
     }
   }
 
-  /* ── Connection state ──────────────────────── */
-  function setConn(c, msg){ state.conn = c; state.connMsg = msg || ''; renderConn(); }
-  function renderConn(){
-    var pill = $('connPill'), lbl = $('connLbl');
-    pill.className = 'conn ' + state.conn;
-    lbl.textContent = state.conn==='ok' ? 'Đã kết nối' : (state.conn==='noauth' ? 'Chưa cấu hình' : 'Lỗi kết nối');
-    pill.title = state.connMsg || 'Bấm để mở cài đặt';
-  }
+  /* ── Connection state (public: chỉ lưu để hiện banner lỗi) ── */
+  function setConn(c, msg){ state.conn = c; state.connMsg = msg || ''; }
+  function renderConn(){ /* no-op: pill đã bỏ ở chế độ công khai */ }
 
   /* ── API: zones ────────────────────────────── */
   function loadZones(silent){
-    if (!cfg.token) {
-      $('genDomain').innerHTML = '<option value="">— nhập VIEW_TOKEN trong Cài đặt —</option>';
-      $('genDomain').disabled = true;
-      setConn('noauth', 'Chưa nhập VIEW_TOKEN');
-      return Promise.resolve(false);
-    }
     if (!silent) {
       $('genDomain').innerHTML = '<option value="">— đang tải domain… —</option>';
       $('genDomain').disabled = true;
@@ -762,8 +743,7 @@
           var em = r.data && r.data.error ? r.data.error : ('HTTP '+r.status);
           $('genDomain').innerHTML = '<option value="">— lỗi tải domain —</option>';
           $('genDomain').disabled = true;
-          if (r.status === 401) setConn('noauth', 'VIEW_TOKEN không đúng');
-          else setConn('err', em);
+          setConn('err', em);
           if (!silent) toast(esc(em), 'err');
           return false;
         }
@@ -793,10 +773,66 @@
     else s.selectedIndex = Math.floor(Math.random()*state.zones.length);
   }
 
+  /* ── Gmail accounts (hệ thống) ─────────────── */
+  function loadGmails(silent){
+    return fetch(apiUrl('/gmails'), { headers: apiHeaders() })
+      .then(function(res){ return res.json().then(function(d){ return { ok: res.ok, status: res.status, data: d }; }); })
+      .then(function(r){
+        if (!r.ok) { if (!silent) toast(esc(r.data && r.data.error || ('HTTP '+r.status)), 'err'); return false; }
+        state.gmails = (r.data.gmails || []).filter(Boolean);
+        lsSet('tmv3_gmails', state.gmails);
+        updateGmailInfo();
+        renderFoot();
+        if (!silent) toast('Đã tải <b>'+state.gmails.length+' Gmail</b>');
+        return true;
+      })
+      .catch(function(){ if (!silent) toast('Lỗi mạng khi tải Gmail', 'err'); return false; });
+  }
+  function updateGmailInfo(){
+    var el = $('gmailInfo'); if (!el) return;
+    if (!state.gmails.length) { el.innerHTML = '<b style="color:var(--amber)">Chưa có Gmail nào.</b> Thêm Gmail gốc (đã forward về worker) trong trang admin <b>/admin</b>.'; }
+    else { el.innerHTML = '<b style="color:var(--text2)">'+state.gmails.length+' Gmail</b> trong hệ thống — bấm để sinh biến thể ngẫu nhiên.'; }
+  }
+  function randStr(n){ var c='abcdefghijklmnopqrstuvwxyz0123456789', s=''; for (var i=0;i<n;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
+  function gmailVariant(base){
+    // local part sạch (bỏ dấu chấm + phần +alias cũ)
+    var at = base.lastIndexOf('@');
+    var local = base.slice(0, at).replace(/\./g,'').split('+')[0];
+    var useDot = Math.random() < 0.5 && local.length >= 2;
+    if (useDot){
+      // chèn 1..3 dấu chấm ở vị trí ngẫu nhiên giữa các ký tự (không đầu/cuối, không liền nhau)
+      var positions = []; for (var i=1;i<local.length;i++) positions.push(i);
+      positions.sort(function(){ return Math.random()-0.5; });
+      var k = Math.min(positions.length, 1 + Math.floor(Math.random()*3));
+      var chosen = positions.slice(0,k).sort(function(a,b){ return a-b; });
+      var out=''; for (var j=0;j<local.length;j++){ out+=local[j]; if (chosen.indexOf(j+1)>=0 && j+1<local.length) out+='.'; }
+      return out + '@gmail.com';
+    }
+    return local + '+' + randStr(5 + Math.floor(Math.random()*4)) + '@gmail.com';
+  }
+  function gmailCreate(){
+    if (!state.gmails.length) { toast('Chưa có Gmail trong hệ thống — thêm trong trang admin /admin', 'warn'); return; }
+    var base = state.gmails[Math.floor(Math.random()*state.gmails.length)];
+    var em = normEmail(gmailVariant(base));
+    if (!getBox(em)) { state.boxes.unshift({ email: em, created: Date.now() }); saveBoxes(); }
+    state.active = em; state.sel = null; state.query = '';
+    renderAll();
+    copyText(em, em);
+    registerBox(em);
+    fetchBox(em);
+  }
+  function setMode(m){
+    state.mode = m; lsSet('tmv3_mode', m);
+    $('modeDomain').classList.toggle('active', m==='domain');
+    $('modeGmail').classList.toggle('active', m==='gmail');
+    $('genDomainView').style.display = m==='domain' ? 'block' : 'none';
+    $('genGmailView').style.display = m==='gmail' ? 'block' : 'none';
+    if (m==='gmail') { updateGmailInfo(); if (!state.gmails.length) loadGmails(true); }
+  }
+
   /* ── API: fetch mail ───────────────────────── */
   function fetchBox(email, opts){
     opts = opts || {};
-    if (!cfg.token) { setConn('noauth', 'Chưa nhập VIEW_TOKEN'); renderList(); return Promise.resolve(); }
     if (!email) return Promise.resolve();
     state.fetching = true;
     if (!opts.silent) { $('refreshIco').classList.add('spin'); }
@@ -809,8 +845,7 @@
       .then(function(r){
         if (!r.ok) {
           var em = r.data && r.data.error ? r.data.error : ('HTTP '+r.status);
-          if (r.status === 401) setConn('noauth', 'VIEW_TOKEN không đúng');
-          else setConn('err', em);
+          setConn('err', em);
           if (!opts.silent) toast(esc(em), 'err');
           return;
         }
@@ -895,10 +930,8 @@
     var c = $('listpane');
     if (!state.active) {
       c.innerHTML = '<div class="void">'+ICON_MAIL.replace('<svg','<svg style="width:54px;height:54px"')
-        +'<div class="h">Chưa chọn hộp thư</div><div class="s">Tạo địa chỉ tạm mới ở thanh bên — username faker, domain ngẫu nhiên từ Cloudflare của bạn.</div>'
-        +(!cfg.token?'<button class="pbtn primary" id="voidSettings">Nhập VIEW_TOKEN để bắt đầu</button>':'')
+        +'<div class="h">Chưa chọn hộp thư</div><div class="s">Tạo địa chỉ tạm mới ở thanh bên — username faker, domain ngẫu nhiên hoặc Gmail của hệ thống.</div>'
         +'</div>';
-      var vs = $('voidSettings'); if (vs) vs.addEventListener('click', openSettings);
       return;
     }
     var email = state.active;
@@ -914,11 +947,7 @@
       + '<input id="searchInp" type="text" placeholder="Tìm kiếm" value="'+esc(state.query)+'"/></div>'
       + '</div>';
 
-    if (!cfg.token) {
-      h += '<div class="banner">Chưa có VIEW_TOKEN — <a href="#" id="bannerSettings">mở Cài đặt</a> để kết nối và đọc thư.</div>';
-    } else if (state.conn === 'noauth') {
-      h += '<div class="banner err">VIEW_TOKEN không đúng — <a href="#" id="bannerSettings">kiểm tra lại trong Cài đặt</a>.</div>';
-    } else if (state.conn === 'err') {
+    if (state.conn === 'err') {
       h += '<div class="banner err">Lỗi kết nối: '+esc(state.connMsg||'')+' — <a href="#" id="bannerRetry">thử lại</a>.</div>';
     }
 
@@ -954,7 +983,6 @@
     var e;
     if ((e=$('copyAddr'))) e.addEventListener('click', function(ev){ ev.preventDefault(); copyText(email, email); });
     if ((e=$('clearBox'))) e.addEventListener('click', function(ev){ ev.preventDefault(); deleteBoxMail(email); });
-    if ((e=$('bannerSettings'))) e.addEventListener('click', function(ev){ ev.preventDefault(); openSettings(); });
     if ((e=$('bannerRetry'))) e.addEventListener('click', function(ev){ ev.preventDefault(); fetchBox(email); });
     if ((e=$('searchInp'))) {
       e.addEventListener('input', function(){
@@ -1067,11 +1095,11 @@
 
   /* ── Polling ───────────────────────────────── */
   setInterval(function(){
-    if (!state.poll || !state.active || !cfg.token || document.hidden) return;
+    if (!state.poll || !state.active || document.hidden) return;
     fetchBox(state.active, { silent: true });
   }, POLL_MS);
   document.addEventListener('visibilitychange', function(){
-    if (!document.hidden && state.active && cfg.token) fetchBox(state.active, { silent: true });
+    if (!document.hidden && state.active) fetchBox(state.active, { silent: true });
   });
 
   /* ── Generator ─────────────────────────────── */
@@ -1081,23 +1109,16 @@
     if (!s.disabled && s.options.length) s.selectedIndex = Math.floor(Math.random()*s.options.length);
   });
   function registerBox(em){
-    // Ghi log địa chỉ vừa tạo + IP người tạo (best-effort, cần VIEW_TOKEN)
-    if (!cfg.token) return;
+    // Ghi log địa chỉ vừa tạo + IP người tạo (best-effort, công khai)
     try {
       fetch(apiUrl('/register'), {
         method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, apiHeaders()),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: em })
       }).catch(function(){});
     } catch(e){}
   }
   function createBox(){
-    // BẮT BUỘC có VIEW_TOKEN mới cho tạo địa chỉ (chặn cả đường dán địa chỉ)
-    if (!cfg.token) {
-      toast('Cần nhập VIEW_TOKEN trước khi tạo địa chỉ', 'warn');
-      openSettings();
-      return;
-    }
     var raw = $('genUser').value.trim();
     var em;
     if (raw.indexOf('@') > 0) {
@@ -1105,7 +1126,7 @@
     } else {
       var u = cleanName(raw) || fakerName();
       var d = $('genDomain').value;
-      if (!d) { toast('Chưa có domain — bấm "↻ domain" hoặc kiểm tra VIEW_TOKEN trong Cài đặt', 'warn'); loadZones(false); return; }
+      if (!d) { toast('Đang tải domain… bấm ↻ nếu chưa có', 'warn'); loadZones(false); return; }
       lsSet('tmv3_domain', d);
       em = u+'@'+d;
     }
@@ -1123,7 +1144,10 @@
   }
   $('btnCreate').addEventListener('click', createBox);
   $('genUser').addEventListener('keydown', function(e){ if (e.key==='Enter') createBox(); });
-  $('reloadZones').addEventListener('click', function(){ loadZones(false); });
+  $('btnGmailRandom').addEventListener('click', gmailCreate);
+  $('modeDomain').addEventListener('click', function(){ setMode('domain'); });
+  $('modeGmail').addEventListener('click', function(){ setMode('gmail'); });
+  $('reloadZones').addEventListener('click', function(){ if (state.mode==='gmail') loadGmails(false); else loadZones(false); });
 
   /* ── Toolbar ───────────────────────────────── */
   $('tbRefresh').addEventListener('click', function(){
@@ -1136,33 +1160,10 @@
     this.classList.toggle('active', state.poll);
     renderFoot();
   });
-  $('connPill').addEventListener('click', openSettings);
-
-  /* ── Settings ──────────────────────────────── */
-  function openSettings(){
-    $('cfgToken').value = cfg.token || '';
-    $('cfgApi').value = cfg.api || '';
-    $('settingsOverlay').classList.add('show');
-    if (!cfg.token) setTimeout(function(){ $('cfgToken').focus(); }, 60);
-  }
-  $('tbSettings').addEventListener('click', openSettings);
-  $('settingsCancel').addEventListener('click', function(){ $('settingsOverlay').classList.remove('show'); });
-  $('settingsOverlay').addEventListener('click', function(e){ if (e.target===this) this.classList.remove('show'); });
-  $('settingsSave').addEventListener('click', function(){
-    cfg.token = $('cfgToken').value.trim();
-    cfg.api = $('cfgApi').value.trim().replace(/\/(logs|otp|messages|health|zones)\/?$/, '').replace(/\/+$/, '');
-    lsSet(LS_CFG, cfg);
-    $('settingsOverlay').classList.remove('show');
-    toast('Đã lưu cài đặt');
-    loadZones(false).then(function(){
-      if (state.active) fetchBox(state.active);
-    });
-  });
-
   /* ── Keyboard ──────────────────────────────── */
   document.addEventListener('keydown', function(e){
     if (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA') return;
-    if (e.key==='Escape') { state.sel=null; $('settingsOverlay').classList.remove('show'); renderAll(); return; }
+    if (e.key==='Escape') { state.sel=null; renderAll(); return; }
     if (!state.active) return;
     var msgs = msgsOf(state.active); if (!msgs.length) return;
     var idx = -1; msgs.forEach(function(m,i){ if (m.id===state.sel) idx=i; });
@@ -1178,16 +1179,14 @@
   /* ── Init ──────────────────────────────────── */
   loadState();
   if (state.zones.length) fillDomains();
+  setMode(state.mode === 'gmail' ? 'gmail' : 'domain');
   renderAll();
-  if (!cfg.token) {
-    openSettings();
-  } else {
-    loadZones(true).then(function(){
-      if (!state.active && state.boxes.length) state.active = state.boxes[0].email;
-      if (state.active) fetchBox(state.active, { silent: true });
-      renderAll();
-    });
-  }
+  loadZones(true).then(function(){
+    if (!state.active && state.boxes.length) state.active = state.boxes[0].email;
+    if (state.active) fetchBox(state.active, { silent: true });
+    renderAll();
+  });
+  loadGmails(true);
 })();
 </script>
 </body>
