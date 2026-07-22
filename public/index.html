@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>iCloud Mail Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/@faker-js/faker@8/dist/faker.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -534,6 +535,20 @@
     const c = 'abcdefghijklmnopqrstuvwxyz0123456789';
     return Array.from({length: len}, () => c[Math.floor(Math.random()*c.length)]).join('');
   }
+  function tmFakerUsername() {
+    try {
+      // Dùng faker.js tạo username thật, dạng: firstname.lastname / firstname_number / ...
+      const f = faker;
+      const styles = [
+        () => f.internet.userName().toLowerCase().replace(/[^a-z0-9._]/g, '.').replace(/\.+/g, '.').replace(/(^\.|\.$)/g, ''),
+        () => (f.person.firstName() + '.' + f.person.lastName()).toLowerCase().replace(/[^a-z.]/g, ''),
+        () => (f.person.firstName() + f.number.int({min:1,max:999})).toLowerCase().replace(/[^a-z0-9]/g, ''),
+        () => (f.word.adjective() + '.' + f.person.firstName()).toLowerCase().replace(/[^a-z.]/g, ''),
+      ];
+      const result = styles[Math.floor(Math.random()*styles.length)]();
+      return result || tmRandStr(8);
+    } catch { return tmRandStr(8); }
+  }
   function toggleTmCard() {
     const body = document.getElementById('tmBody');
     const hdr  = document.getElementById('tmHeader');
@@ -566,7 +581,12 @@
     } catch (e) { tmStatus('❌ ' + e.message, 'err'); }
   }
   function tmRandomUsername() {
-    document.getElementById('tmUsername').value = tmRandStr(8);
+    // Random cả username lẫn domain
+    document.getElementById('tmUsername').value = tmFakerUsername();
+    const sel = document.getElementById('tmDomain');
+    if (!sel.disabled && sel.options.length > 0) {
+      sel.selectedIndex = Math.floor(Math.random() * sel.options.length);
+    }
   }
   function tmCreate() {
     const user   = document.getElementById('tmUsername').value.trim() || tmRandStr(8);
