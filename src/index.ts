@@ -334,7 +334,9 @@ async function handleEmail(message: EmailMessage, env: Env): Promise<void> {
   if (!recipient) return;
 
   const subject = decodeMimeWords(message.headers.get("Subject") || "");
-  const sender = decodeMimeWords(message.from || message.headers.get("From") || "");
+  // Ưu tiên header From: (người gửi GỐC) thay vì envelope MAIL FROM
+  // (Gmail forward đặt envelope = <local>+caf_=<đích>@gmail.com — không phải người gửi thật).
+  const sender = decodeMimeWords(message.headers.get("From") || message.from || "");
   const receivedAt = parseReceivedAt(message.headers);
   const { text, html } = await extractBodies(message.raw);
 

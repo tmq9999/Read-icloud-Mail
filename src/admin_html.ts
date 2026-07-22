@@ -339,6 +339,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
   function qpd(s){var t=String(s).replace(/=\\r?\\n/g,'');var bin='';for(var i=0;i<t.length;i++){var c=t.charAt(i);if(c==='='&&/^[0-9A-Fa-f]{2}$/.test(t.substr(i+1,2))){bin+=String.fromCharCode(parseInt(t.substr(i+1,2),16));i+=2;}else{bin+=c;}}try{return decodeURIComponent(escape(bin));}catch(e){return bin;}}
   function decodeBody(s){if(!s)return s;if(looksB64(s)){var d=b64d(s);if(d&&d!==s)s=d;}if(hasQP(s))s=qpd(s);return s;}
   function dec(m){if(!m.__d){m.__d={text:decodeBody(m.body_text||''),html:decodeBody(m.body_html||'')};}return m.__d;}
+  function cleanSender(s){return String(s==null?'':s).replace(/\\+caf_=[^@>\\s"']*(@)/i,'$1');}
   function otpOf(m){
     var t=(m.subject||'')+' '+(dec(m).text||'');
     var lab=t.match(/(?:code|otp|verification code|m[aã] x[aá]c nh[aậ]n|m[aã] x[aá]c minh|m[aã] OTP)[^\\d]{0,30}(\\d{4,8})/i);
@@ -354,7 +355,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     var h='<table><thead><tr><th>Đến (địa chỉ nhận)</th><th>Từ (người gửi)</th><th>Tiêu đề</th><th>Mã</th><th>Thời gian</th></tr></thead><tbody>';
     rows.forEach(function(m){
       var o=otpOf(m);
-      h+='<tr class="click" data-id="'+esc(String(m.id))+'"><td class="mono">'+esc(m.recipient||'—')+'</td><td>'+esc(m.sender||'—')+'</td><td>'+esc(m.subject||'(không tiêu đề)')+'</td><td>'+(o?'<span class="otp">'+esc(o)+'</span>':'<span class="muted">—</span>')+'</td><td class="muted">'+fmt(m.received_at)+'</td></tr>';
+      h+='<tr class="click" data-id="'+esc(String(m.id))+'"><td class="mono">'+esc(m.recipient||'—')+'</td><td>'+esc(cleanSender(m.sender)||'—')+'</td><td>'+esc(m.subject||'(không tiêu đề)')+'</td><td>'+(o?'<span class="otp">'+esc(o)+'</span>':'<span class="muted">—</span>')+'</td><td class="muted">'+fmt(m.received_at)+'</td></tr>';
     });
     h+='</tbody></table>';
     $('msgTbl').innerHTML=h;
@@ -370,7 +371,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     if(!m)return;state.view='html';
     var o=otpOf(m);var hasHtml=!!(dec(m).html&&dec(m).html.trim());
     var h='<div class="mh"><div class="meta"><div class="subj">'+esc(m.subject||'(không tiêu đề)')+'</div>'
-      +'<div class="kv">Từ: '+esc(m.sender||'—')+'</div><div class="kv">Đến: '+esc(m.recipient||'—')+'</div><div class="kv">'+fmt(m.received_at)+'</div></div>'
+      +'<div class="kv">Từ: '+esc(cleanSender(m.sender)||'—')+'</div><div class="kv">Đến: '+esc(m.recipient||'—')+'</div><div class="kv">'+fmt(m.received_at)+'</div></div>'
       +'<div class="x" id="mClose">&times;</div></div>';
     if(o)h+='<div class="otp-card"><div><div class="lbl">Mã xác minh</div><div class="code">'+esc(o)+'</div></div><button class="btn primary" id="mCopy" style="margin-left:auto">Chép mã</button></div>';
     if(hasHtml)h+='<div class="seg"><button id="segH" class="active">HTML</button><button id="segT">Văn bản</button></div>';
