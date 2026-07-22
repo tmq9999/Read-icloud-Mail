@@ -98,9 +98,30 @@ function extractOriginalRecipient(headers: EmailHeaders): string | null {
       found.push(m[0].trim().toLowerCase());
     }
   }
-  // Prefer an iCloud alias (the HME address the user searches by)
+  // Prefer an iCloud alias (the HME address the user searches by),
+  // then a Gmail address (Gmail-forwarded tempmail), then anything found.
   const icloud = found.find((e) => e.endsWith("@icloud.com") || e.endsWith("@privaterelay.appleid.com"));
-  return icloud || found[0] || null;
+  const gmail = found.find((e) => e.endsWith("@gmail.com") || e.endsWith("@googlemail.com"));
+  return icloud || gmail || found[0] || null;
+}
+
+// Canonical form of an address. For Gmail/Googlemail: lowercase, strip everything
+// after '+', remove all dots in the local part, normalize domain to gmail.com.
+// This maps every dot/plus variant of a base Gmail to a single inbox.
+function canonicalAddress(addr: string): string {
+  const a = (addr || "").trim().toLowerCase();
+  const at = a.lastIndexOf("@");
+  if (at < 0) return a;
+  let local = a.slice(0, at);
+  const domain = a.slice(at + 1);
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    local = local.split("+")[0].replace(/\./g, "");
+    return local + "@gmail.com";
+  }
+  return local + "@" + domain;
+}
+function isGmailAddress(addr: string): boolean {
+  return /@(gmail|googlemail)\.com$/i.test((addr || "").trim());
 }
 
 function decodeQuotedPrintable(s: string, charset = "utf-8"): string {
@@ -278,18 +299,20 @@ async function storeMessage(
   bodyHtml: string,
   receivedAt: string,
 ): Promise<void> {
+  const rcpt = recipient.toLowerCase();
   await db
     .prepare(
-      `INSERT INTO messages (recipient, sender, subject, body_text, body_html, received_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (recipient, sender, subject, body_text, body_html, received_at, recipient_canonical)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
-      recipient.toLowerCase(),
+      rcpt,
       sender,
       subject,
       bodyText.length > 100_000 ? bodyText.slice(0, 100_000) : bodyText,
       bodyHtml.length > 100_000 ? bodyHtml.slice(0, 100_000) : bodyHtml,
       receivedAt,
+      canonicalAddress(rcpt),
     )
     .run();
 }
@@ -360,15 +383,21 @@ async function handleLogsRequest(request: Request, env: Env): Promise<Response> 
     maxLimit
   );
 
+  // Gmail: match by canonical form so any dot/plus variant of a base gmail
+  // resolves to the same inbox. Non-gmail: exact recipient match (unchanged).
+  const gmailQuery = isGmailAddress(mailbox);
+  const whereCol = gmailQuery ? "recipient_canonical" : "recipient";
+  const whereVal = gmailQuery ? canonicalAddress(mailbox) : mailbox;
+
   try {
     const { results } = await env.DB_OTP_MAIL.prepare(
       `SELECT id, recipient, sender, subject, body_text, body_html, received_at, created_at
        FROM messages
-       WHERE recipient = ?
+       WHERE ${whereCol} = ?
        ORDER BY received_at DESC
        LIMIT ?`
     )
-      .bind(mailbox, limit)
+      .bind(whereVal, limit)
       .all<StoredMessage>();
 
     const messages = (results || []).map((m) => ({
@@ -419,6 +448,23 @@ async function handleZonesRequest(request: Request, env: Env): Promise<Response>
     return jsonResponse({ zones });
   } catch (err) {
     return errorResponse(`Fetch error: ${err instanceof Error ? err.message : String(err)}`, 500);
+  }
+}
+
+// GET /gmails — list active base Gmail accounts (for the generator).
+async function handleGmailsRequest(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (request.method !== "GET") return errorResponse("Method not allowed", 405);
+  const url = new URL(request.url);
+  if (!authCheck(request, url, env)) return errorResponse("Unauthorized", 401);
+  try {
+    const { results } = await env.DB_OTP_MAIL.prepare(
+      `SELECT email FROM gmail_accounts WHERE active = 1 ORDER BY email`
+    ).all<{ email: string }>();
+    const gmails = (results || []).map((r) => r.email).filter(Boolean);
+    return jsonResponse({ gmails });
+  } catch (err) {
+    return errorResponse(`Database error: ${err instanceof Error ? err.message : String(err)}`, 500);
   }
 }
 
@@ -510,18 +556,22 @@ async function handleOtpRequest(request: Request, env: Env): Promise<Response> {
   const scan = Math.min(parseInt(url.searchParams.get("scan") || "5", 10) || 5, 20);
 
   try {
+    const gmailQuery = isGmailAddress(mailbox);
+    const whereCol = gmailQuery ? "recipient_canonical" : "recipient";
+    const whereVal = gmailQuery ? canonicalAddress(mailbox) : mailbox;
+
     let query: string;
     let bindings: (string | number)[];
     if (afterIso && !isNaN(new Date(afterIso).getTime())) {
       query = `SELECT id, subject, body_text, body_html, received_at FROM messages
-               WHERE recipient = ? AND received_at > ?
+               WHERE ${whereCol} = ? AND received_at > ?
                ORDER BY received_at DESC LIMIT ?`;
-      bindings = [mailbox, afterIso, scan];
+      bindings = [whereVal, afterIso, scan];
     } else {
       query = `SELECT id, subject, body_text, body_html, received_at FROM messages
-               WHERE recipient = ?
+               WHERE ${whereCol} = ?
                ORDER BY received_at DESC LIMIT ?`;
-      bindings = [mailbox, scan];
+      bindings = [whereVal, scan];
     }
 
     const { results } = await env.DB_OTP_MAIL.prepare(query)
@@ -848,6 +898,58 @@ async function handleAdmin(request: Request, env: Env, url: URL): Promise<Respon
     return adminJson({ allowed_ips: allowed, current_ip: ip });
   }
 
+  if (path === "/admin/api/gmail") {
+    if (request.method === "GET") {
+      try {
+        const { results } = await env.DB_OTP_MAIL.prepare(
+          `SELECT email, note, active, created_at FROM gmail_accounts ORDER BY created_at DESC`
+        ).all();
+        return adminJson({ rows: results || [] });
+      } catch (err) {
+        return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+      }
+    }
+    if (request.method === "POST") {
+      let body: any = {};
+      try { body = await request.json(); } catch { /* ignore */ }
+      const action = typeof body?.action === "string" ? body.action : "add";
+      const email = canonicalAddress(typeof body?.email === "string" ? body.email : "");
+      if (action === "add") {
+        if (!isGmailAddress(email)) return adminJson({ error: "Chỉ chấp nhận địa chỉ @gmail.com" }, 422);
+        const note = (typeof body?.note === "string" ? body.note : "").slice(0, 200);
+        try {
+          await env.DB_OTP_MAIL.prepare(
+            `INSERT INTO gmail_accounts (email, note, active) VALUES (?, ?, 1)
+             ON CONFLICT(email) DO UPDATE SET note = excluded.note, active = 1`
+          ).bind(email, note).run();
+          return adminJson({ ok: true, email });
+        } catch (err) {
+          return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+        }
+      }
+      if (action === "toggle") {
+        try {
+          await env.DB_OTP_MAIL.prepare(
+            `UPDATE gmail_accounts SET active = CASE active WHEN 1 THEN 0 ELSE 1 END WHERE email = ?`
+          ).bind(email).run();
+          return adminJson({ ok: true });
+        } catch (err) {
+          return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+        }
+      }
+      if (action === "delete") {
+        try {
+          await env.DB_OTP_MAIL.prepare(`DELETE FROM gmail_accounts WHERE email = ?`).bind(email).run();
+          return adminJson({ ok: true });
+        } catch (err) {
+          return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+        }
+      }
+      return adminJson({ error: "Hành động không hợp lệ" }, 400);
+    }
+    return adminJson({ error: "Method not allowed" }, 405);
+  }
+
   return adminJson({ error: "Not found" }, 404);
 }
 
@@ -871,6 +973,9 @@ export default {
     }
     if (url.pathname === "/zones") {
       return handleZonesRequest(request, env);
+    }
+    if (url.pathname === "/gmails") {
+      return handleGmailsRequest(request, env);
     }
     if (url.pathname === "/health") {
       return jsonResponse({
