@@ -91,58 +91,69 @@
     .tm-header h3 { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; margin: 0; }
     .tm-chevron { font-size: 11px; color: var(--text-muted); transition: transform .2s; }
     .tm-chevron.open { transform: rotate(180deg); }
-    .tm-body { display: none; padding: 16px 18px; }
+    .tm-body { display: none; padding: 14px 18px; }
     .tm-body.open { display: block; }
 
-    /* username + domain row */
+    /* All controls in one row */
     .tm-compose {
       display: flex; gap: 0; align-items: stretch;
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       overflow: hidden;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     .tm-compose input {
-      flex: 1; border: none; background: transparent;
+      flex: 2; border: none; background: transparent;
       padding: 10px 12px; color: var(--text); font-size: 14px;
-      outline: none; min-width: 80px;
+      outline: none; min-width: 60px;
     }
     .tm-at {
       display: flex; align-items: center;
-      padding: 0 8px; font-size: 16px; font-weight: 700;
+      padding: 0 8px; font-size: 15px; font-weight: 700;
       color: var(--text-muted); background: rgba(255,255,255,.04);
       border-left: 1px solid var(--border);
       border-right: 1px solid var(--border);
-      user-select: none;
+      user-select: none; flex-shrink: 0;
     }
     .tm-compose select {
-      flex: 1.2; border: none; background: transparent;
+      flex: 2.5; border: none; background: transparent;
       padding: 10px 10px; color: var(--text); font-size: 13px;
       outline: none; cursor: pointer; appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23a8a8c8' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 10px center;
-      padding-right: 28px;
+      background-repeat: no-repeat; background-position: right 10px center;
+      padding-right: 28px; border-left: 1px solid var(--border);
     }
     .tm-compose select option { background: #1a1a24; }
-    .tm-compose select:disabled { opacity: .5; }
+    .tm-compose select:disabled { opacity: .4; }
+    .tm-compose .tm-btn-rand {
+      flex-shrink: 0; border: none; border-left: 1px solid var(--border);
+      background: rgba(255,255,255,.04); color: var(--text-muted);
+      padding: 0 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background .15s, color .15s; white-space: nowrap;
+    }
+    .tm-compose .tm-btn-rand:hover { background: rgba(99,102,241,.15); color: var(--accent2); }
+    .tm-compose .tm-btn-create {
+      flex-shrink: 0; border: none; border-left: 1px solid var(--border);
+      background: var(--accent); color: #fff;
+      padding: 0 18px; font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: background .15s; white-space: nowrap;
+    }
+    .tm-compose .tm-btn-create:hover { background: var(--accent-hover); }
 
-    .tm-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-    .tm-row .btn { flex: none; padding: 8px 14px; font-size: 13px; }
-    .tm-status { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+    .tm-status { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
     .tm-status.err { color: var(--danger); }
     .tm-status.ok { color: var(--success); }
     .tm-result {
       display: flex; align-items: center; gap: 10px;
       background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 10px 14px;
+      border-radius: var(--radius-sm); padding: 9px 14px;
       font-size: 14px; font-family: monospace; color: var(--accent2);
     }
     .tm-result span { flex: 1; }
     .tm-result button {
       background: none; border: 1px solid var(--border); border-radius: 6px;
-      color: var(--text-muted); font-size: 12px; padding: 4px 10px;
+      color: var(--text-muted); font-size: 12px; padding: 3px 10px;
       cursor: pointer; transition: all .15s; white-space: nowrap;
     }
     .tm-result button:hover { border-color: var(--accent); color: var(--accent2); }
@@ -427,18 +438,15 @@
     <div class="tm-body" id="tmBody">
       <div class="tm-status" id="tmStatus">⏳ Chưa tải domain. Nhấn “Tải domains” để lấy danh sách từ Cloudflare.</div>
 
-      <!-- username @ domain -->
+      <!-- username @ domain + actions — all in one row -->
       <div class="tm-compose">
         <input type="text" id="tmUsername" placeholder="username (bỏ trống = random)" />
         <div class="tm-at">@</div>
         <select id="tmDomain" disabled>
-          <option value="">— chọn domain —</option>
+          <option value="">— đang tải... —</option>
         </select>
-      </div>
-
-      <div class="tm-row">
-        <button class="btn btn-secondary" onclick="tmRandomUsername()">🎲 Random</button>
-        <button class="btn btn-primary" onclick="tmCreate()">✔ Tạo &amp; Thêm</button>
+        <button class="tm-btn-rand" onclick="tmRandomUsername()">🎲 Random</button>
+        <button class="tm-btn-create" onclick="tmCreate()">✔ Tạo &amp; Thêm</button>
       </div>
 
       <div id="tmResult" style="display:none" class="tm-result">
