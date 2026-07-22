@@ -487,13 +487,6 @@
       <label>Worker API URL</label>
       <div class="fld"><input id="cfgApi" type="text" placeholder="Mặc định: cùng địa chỉ trang này" spellcheck="false"/></div>
       <div class="note">Token dùng để đọc thư (<b>/logs</b>), tải domain (<b>/zones</b>) và xóa thư (<b>/messages</b>). Lưu cục bộ trên trình duyệt của bạn.</div>
-      <div class="dz">
-        <div class="dzt">Vùng nguy hiểm</div>
-        <button class="pbtn danger" id="btnNukeAll" style="flex:none">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          Xóa TOÀN BỘ thư trong database
-        </button>
-      </div>
     </div>
     <div class="mfoot">
       <button class="pbtn" id="settingsCancel">Hủy</button>
@@ -861,22 +854,6 @@
       })
       .catch(function(e){ toast('Lỗi: '+esc(e.message||e), 'err'); });
   }
-  function deleteAllMail(){
-    if (!confirm('⚠️ Xóa TOÀN BỘ thư của TẤT CẢ địa chỉ trong database? Không thể hoàn tác!')) return;
-    if (!confirm('Chắc chắn chứ? Toàn bộ database thư sẽ trống.')) return;
-    fetch(apiUrl('/messages'), { method: 'DELETE', headers: apiHeaders() })
-      .then(function(res){ return res.json(); })
-      .then(function(d){
-        if (d && d.deleted) {
-          toast('Đã xóa <b>'+(d.rows_deleted!=null?d.rows_deleted:'')+' thư</b> toàn hệ thống');
-          state.cache = {}; state.sel = null; state.read = {}; saveRead();
-          $('settingsOverlay').classList.remove('show');
-          renderAll();
-        } else toast(esc(d && d.error || 'Xóa thất bại'), 'err');
-      })
-      .catch(function(e){ toast('Lỗi: '+esc(e.message||e), 'err'); });
-  }
-
   /* ── Render: sidebar boxes ─────────────────── */
   var ICON_TRAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
   function renderBoxes(){
@@ -1103,7 +1080,24 @@
     var s = $('genDomain');
     if (!s.disabled && s.options.length) s.selectedIndex = Math.floor(Math.random()*s.options.length);
   });
+  function registerBox(em){
+    // Ghi log địa chỉ vừa tạo + IP người tạo (best-effort, cần VIEW_TOKEN)
+    if (!cfg.token) return;
+    try {
+      fetch(apiUrl('/register'), {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, apiHeaders()),
+        body: JSON.stringify({ email: em })
+      }).catch(function(){});
+    } catch(e){}
+  }
   function createBox(){
+    // BẮT BUỘC có VIEW_TOKEN mới cho tạo địa chỉ (chặn cả đường dán địa chỉ)
+    if (!cfg.token) {
+      toast('Cần nhập VIEW_TOKEN trước khi tạo địa chỉ', 'warn');
+      openSettings();
+      return;
+    }
     var raw = $('genUser').value.trim();
     var em;
     if (raw.indexOf('@') > 0) {
@@ -1111,7 +1105,7 @@
     } else {
       var u = cleanName(raw) || fakerName();
       var d = $('genDomain').value;
-      if (!d) { toast('Chưa có domain — nhập VIEW_TOKEN trong Cài đặt để tải danh sách', 'warn'); openSettings(); return; }
+      if (!d) { toast('Chưa có domain — bấm "↻ domain" hoặc kiểm tra VIEW_TOKEN trong Cài đặt', 'warn'); loadZones(false); return; }
       lsSet('tmv3_domain', d);
       em = u+'@'+d;
     }
@@ -1124,6 +1118,7 @@
     $('genUser').value = '';
     renderAll();
     copyText(em, em);
+    registerBox(em);
     fetchBox(em);
   }
   $('btnCreate').addEventListener('click', createBox);
@@ -1163,7 +1158,6 @@
       if (state.active) fetchBox(state.active);
     });
   });
-  $('btnNukeAll').addEventListener('click', deleteAllMail);
 
   /* ── Keyboard ──────────────────────────────── */
   document.addEventListener('keydown', function(e){
