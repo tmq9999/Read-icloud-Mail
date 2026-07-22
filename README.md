@@ -13,7 +13,7 @@ Dịch vụ **tempmail công khai** chạy trên Cloudflare Workers + D1: tạo 
 - **Giao diện Apple Mail 3 khung** (light) — sidebar hộp thư · danh sách thư · khung đọc; responsive mobile.
 - **2 cách tạo địa chỉ:**
   - **Domain** — username sinh từ faker.js (CDN + fallback offline) `@` domain ngẫu nhiên lấy từ danh sách zone Cloudflare (`GET /zones`).
-  - **Gmail** — random một Gmail gốc trong hệ thống rồi sinh **biến thể dấu chấm** (`a.d.min@gmail.com`) hoặc **+alias** (`admin+x7k2@gmail.com`). Không cho gõ Gmail ngoài hệ thống.
+  - **Gmail** — bấm **Generate email** để xem thử một biến thể (**dấu chấm** `a.d.min@gmail.com` hoặc **+alias** `admin+x7k2@gmail.com`) sinh từ Gmail gốc trong hệ thống; ưng thì bấm **Tạo email**. Không cho gõ Gmail ngoài hệ thống.
 - **Đọc thư realtime** — tự làm mới 10s (tạm dừng khi ẩn tab), badge chưa đọc theo từng hộp.
 - **Tự nhận diện OTP** — trích mã 4–8 số theo ngữ cảnh (ưu tiên có nhãn → số đứng riêng → loại năm/ngày), nổi bật + chép một chạm.
 - **Xem HTML an toàn** — render trong `iframe sandbox`, lọc `<script>`/`on*=`; chuyển HTML ↔ văn bản; giải mã base64 fallback.
@@ -115,6 +115,9 @@ Gmail bỏ qua dấu chấm và mọi thứ sau dấu `+`, nên `admin@gmail.com
 2. Web random một Gmail gốc + sinh biến thể chấm/+alias để người dùng đăng ký dịch vụ.
 3. Mail gửi tới biến thể → về hộp Gmail gốc → forward về worker → lưu D1.
 4. Khi đọc, worker khớp theo **canonical** (bỏ chấm + phần `+`, chuẩn hóa `gmail.com`) nên mọi biến thể của một Gmail gốc gộp về một hộp — **không bao giờ mất OTP**.
+
+> **Cấu hình forward (Gmail):** Settings → *Forwarding and POP/IMAP* → **Add a forwarding address** (nhập địa chỉ đích, vd `inbox@<domain>`) → nhập mã xác nhận (mã này về chính hộp tempmail của địa chỉ đích) → chọn **Forward a copy** → **Save Changes**.
+> `email()` handler trích địa chỉ nhận gốc từ header `To` của mail đã forward nên vẫn giữ đúng biến thể; các mail hệ thống của Google (`forwarding-noreply@google.com`) gửi thẳng tới địa chỉ đích và nằm dưới chính địa chỉ đó.
 
 ---
 
