@@ -383,21 +383,17 @@ async function handleLogsRequest(request: Request, env: Env): Promise<Response> 
     maxLimit
   );
 
-  // Gmail: match by canonical form so any dot/plus variant of a base gmail
-  // resolves to the same inbox. Non-gmail: exact recipient match (unchanged).
-  const gmailQuery = isGmailAddress(mailbox);
-  const whereCol = gmailQuery ? "recipient_canonical" : "recipient";
-  const whereVal = gmailQuery ? canonicalAddress(mailbox) : mailbox;
-
+  // Mỗi địa chỉ (kể cả từng biến thể dấu chấm / +alias của Gmail) là một hộp thư
+  // RIÊNG BIỆT — khớp chính xác theo recipient, không gộp canonical.
   try {
     const { results } = await env.DB_OTP_MAIL.prepare(
       `SELECT id, recipient, sender, subject, body_text, body_html, received_at, created_at
        FROM messages
-       WHERE ${whereCol} = ?
+       WHERE recipient = ?
        ORDER BY received_at DESC
        LIMIT ?`
     )
-      .bind(whereVal, limit)
+      .bind(mailbox, limit)
       .all<StoredMessage>();
 
     const messages = (results || []).map((m) => ({
@@ -484,15 +480,11 @@ async function handleDeleteRequest(request: Request, env: Env): Promise<Response
     return errorResponse("Thiếu ?mail= — xóa toàn bộ chỉ thực hiện trong trang admin", 400);
   }
 
-  // Gmail: delete by canonical so any variant clears the shared inbox.
-  const gmailQuery = isGmailAddress(mailbox);
-  const whereCol = gmailQuery ? "recipient_canonical" : "recipient";
-  const whereVal = gmailQuery ? canonicalAddress(mailbox) : mailbox;
-
+  // Xóa chính xác theo địa chỉ này (mỗi biến thể là hộp riêng).
   try {
     const result = await env.DB_OTP_MAIL.prepare(
-      `DELETE FROM messages WHERE ${whereCol} = ?`
-    ).bind(whereVal).run();
+      `DELETE FROM messages WHERE recipient = ?`
+    ).bind(mailbox).run();
     return jsonResponse({
       deleted: true,
       mail: mailbox,
@@ -547,22 +539,19 @@ async function handleOtpRequest(request: Request, env: Env): Promise<Response> {
   const scan = Math.min(parseInt(url.searchParams.get("scan") || "5", 10) || 5, 20);
 
   try {
-    const gmailQuery = isGmailAddress(mailbox);
-    const whereCol = gmailQuery ? "recipient_canonical" : "recipient";
-    const whereVal = gmailQuery ? canonicalAddress(mailbox) : mailbox;
-
+    // Khớp chính xác địa chỉ — mỗi biến thể Gmail là hộp riêng.
     let query: string;
     let bindings: (string | number)[];
     if (afterIso && !isNaN(new Date(afterIso).getTime())) {
       query = `SELECT id, subject, body_text, body_html, received_at FROM messages
-               WHERE ${whereCol} = ? AND received_at > ?
+               WHERE recipient = ? AND received_at > ?
                ORDER BY received_at DESC LIMIT ?`;
-      bindings = [whereVal, afterIso, scan];
+      bindings = [mailbox, afterIso, scan];
     } else {
       query = `SELECT id, subject, body_text, body_html, received_at FROM messages
-               WHERE ${whereCol} = ?
+               WHERE recipient = ?
                ORDER BY received_at DESC LIMIT ?`;
-      bindings = [whereVal, scan];
+      bindings = [mailbox, scan];
     }
 
     const { results } = await env.DB_OTP_MAIL.prepare(query)
