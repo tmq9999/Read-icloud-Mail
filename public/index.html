@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>iCloud Mail Viewer</title>
-  <script src="https://cdn.jsdelivr.net/npm/@faker-js/faker@8/dist/faker.min.js"></script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -531,23 +531,27 @@
     const el = document.getElementById('tmStatus');
     el.textContent = msg; el.className = 'tm-status' + (type ? ' ' + type : '');
   }
-  function tmRandStr(len = 8) {
-    const c = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    return Array.from({length: len}, () => c[Math.floor(Math.random()*c.length)]).join('');
-  }
+  const _TM_FIRST = ['james','john','robert','michael','william','david','richard','joseph','thomas','charles','emma','olivia','ava','isabella','sophia','mia','charlotte','amelia','harper','evelyn','liam','noah','oliver','elijah','lucas','mason','ethan','aiden','logan','jackson','emily','abigail','madison','elizabeth','sofia','avery','ella','scarlett','grace','chloe','alex','ryan','kevin','daniel','brandon','tyler','jason','matthew','andrew','joshua','sarah','jessica','ashley','amanda','melissa','stephanie','nicole','hannah','samantha','rachel'];
+  const _TM_LAST  = ['smith','johnson','williams','brown','jones','garcia','miller','davis','wilson','taylor','anderson','thomas','jackson','white','harris','martin','thompson','moore','young','allen','king','wright','scott','green','baker','adams','nelson','carter','mitchell','perez','turner','phillips','campbell','parker','evans','edwards','collins','stewart','sanchez','morris','rogers','reed','cook','morgan','bell','murphy','bailey','rivera','cooper','cox'];
+  const _TM_ADJ  = ['cool','dark','swift','bright','silent','lucky','wild','mighty','brave','clever','happy','sunny','cloudy','sharp','quick','lazy','fancy','tiny','epic','grand','bold','calm','kind','wise','lively','noble','proud','eager','gentle','honest'];
+
+  function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function _num(max = 99) { return Math.floor(Math.random() * max) + 1; }
+
   function tmFakerUsername() {
-    try {
-      // Dùng faker.js tạo username thật, dạng: firstname.lastname / firstname_number / ...
-      const f = faker;
-      const styles = [
-        () => f.internet.userName().toLowerCase().replace(/[^a-z0-9._]/g, '.').replace(/\.+/g, '.').replace(/(^\.|\.$)/g, ''),
-        () => (f.person.firstName() + '.' + f.person.lastName()).toLowerCase().replace(/[^a-z.]/g, ''),
-        () => (f.person.firstName() + f.number.int({min:1,max:999})).toLowerCase().replace(/[^a-z0-9]/g, ''),
-        () => (f.word.adjective() + '.' + f.person.firstName()).toLowerCase().replace(/[^a-z.]/g, ''),
-      ];
-      const result = styles[Math.floor(Math.random()*styles.length)]();
-      return result || tmRandStr(8);
-    } catch { return tmRandStr(8); }
+    const first = _pick(_TM_FIRST);
+    const last  = _pick(_TM_LAST);
+    const adj   = _pick(_TM_ADJ);
+    const sep   = _pick(['.', '_', '']);
+    const style = Math.floor(Math.random() * 6);
+    switch (style) {
+      case 0: return first + sep + last;                       // john.smith
+      case 1: return first + sep + last + _num(99);            // john.smith42
+      case 2: return first + _num(99);                         // john87
+      case 3: return adj + sep + first;                        // cool.john
+      case 4: return first + sep + last.slice(0,4) + _num(9);  // john.smit3
+      default: return adj + _num(9) + sep + first;             // cool3.john
+    }
   }
   function toggleTmCard() {
     const body = document.getElementById('tmBody');
