@@ -223,7 +223,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
           <input id="gmNote" class="gm-inp" type="text" placeholder="ghi chú (tùy chọn)"/>
           <button class="btn primary" id="gmAdd">Thêm email</button>
         </div>
-        <div class="warn-box" style="background:rgba(0,122,255,.07);border-color:rgba(0,122,255,.2);color:var(--text2)">Chỉ thêm email bạn đã cấu hình <b>tự động chuyển tiếp (forward)</b> về worker. Người dùng sẽ random biến thể từ các email này — <b>Gmail</b> dùng dấu chấm hoặc +alias, các nhà cung cấp khác dùng <b>+alias</b>.</div>
+        <div class="warn-box" style="background:rgba(0,122,255,.07);border-color:rgba(0,122,255,.2);color:var(--text2)">Chỉ thêm email bạn đã cấu hình <b>tự động chuyển tiếp (forward)</b> về worker. Người dùng sẽ random biến thể theo nhà cung cấp — <b>Gmail</b>: dấu chấm hoặc +alias; <b>Outlook/Hotmail/iCloud…</b>: +alias; nhà cung cấp không hỗ trợ alias (<b>GMX, mail.com, libero.it…</b>): dùng chính mail gốc.</div>
         <div class="tblwrap" id="gmTbl"></div>
       </div>
     </div>
