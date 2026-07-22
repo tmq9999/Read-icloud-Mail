@@ -893,7 +893,8 @@ async function handleAdmin(request: Request, env: Env, url: URL): Promise<Respon
       const action = typeof body?.action === "string" ? body.action : "add";
       const email = canonicalAddress(typeof body?.email === "string" ? body.email : "");
       if (action === "add") {
-        if (!isGmailAddress(email)) return adminJson({ error: "Chỉ chấp nhận địa chỉ @gmail.com" }, 422);
+        // Chấp nhận email BẤT KỲ nhà cung cấp nào (gmail, outlook/hotmail, gmx, mail.com, libero.it, …)
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return adminJson({ error: "Địa chỉ email không hợp lệ" }, 422);
         const note = (typeof body?.note === "string" ? body.note : "").slice(0, 200);
         try {
           await env.DB_OTP_MAIL.prepare(

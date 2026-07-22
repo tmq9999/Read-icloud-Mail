@@ -13,11 +13,11 @@ Dịch vụ **tempmail công khai** chạy trên Cloudflare Workers + D1: tạo 
 - **Giao diện Apple Mail 3 khung** (light) — sidebar hộp thư · danh sách thư · khung đọc; responsive mobile.
 - **2 cách tạo địa chỉ:**
   - **Domain** — username sinh từ faker.js (CDN + fallback offline) `@` domain ngẫu nhiên lấy từ danh sách zone Cloudflare (`GET /zones`).
-  - **Gmail** — bấm **Generate email** để xem thử một biến thể (**dấu chấm** `a.d.min@gmail.com` hoặc **+alias** `admin+x7k2@gmail.com`) sinh từ Gmail gốc trong hệ thống; ưng thì bấm **Tạo email**. Không cho gõ Gmail ngoài hệ thống.
+  - **Email (đa nhà cung cấp)** — bấm **Generate email** để xem thử một biến thể sinh từ một tài khoản email gốc trong hệ thống (Gmail, Outlook/Hotmail, GMX, mail.com, libero.it, …); ưng thì bấm **Tạo email**. Biến thể theo nhà cung cấp: **Gmail** dùng **dấu chấm** (`a.d.min@gmail.com`) hoặc **+alias** (`admin+x7k2@gmail.com`); các nhà cung cấp khác dùng **+alias** (`user+x7k2@outlook.com`). Không cho gõ email ngoài hệ thống.
 - **Đọc thư realtime** — tự làm mới 10s (tạm dừng khi ẩn tab), badge chưa đọc theo từng hộp.
 - **Tự nhận diện OTP** — trích mã 4–8 số theo ngữ cảnh (ưu tiên có nhãn → số đứng riêng → loại năm/ngày), nổi bật + chép một chạm.
 - **Xem HTML an toàn** — render trong `iframe sandbox`, lọc `<script>`/`on*=`; chuyển HTML ↔ văn bản; giải mã base64 fallback.
-- **Trang Admin** (`/admin`) — dashboard số liệu, danh sách địa chỉ đã tạo (kèm **IP người tạo**), thư nhận, quản lý Gmail hệ thống, khóa IP, xóa toàn bộ thư.
+- **Trang Admin** (`/admin`) — dashboard số liệu, danh sách địa chỉ đã tạo (kèm **IP người tạo**), thư nhận, quản lý email hệ thống (đa nhà cung cấp), khóa IP, xóa toàn bộ thư.
 
 ---
 
@@ -70,7 +70,7 @@ Dịch vụ **tempmail công khai** chạy trên Cloudflare Workers + D1: tạo 
 |---|---|
 | `messages` | Thư nhận được (recipient, sender, subject, body_text/html, received_at, **recipient_canonical**) |
 | `addresses` | Địa chỉ người dùng đã tạo (email PK, domain, **ip**, user_agent, created_at, last_seen, hits) |
-| `gmail_accounts` | Gmail gốc đã forward vào hệ thống (email PK, note, active) |
+| `gmail_accounts` | Email gốc đã forward vào hệ thống — mọi nhà cung cấp (email PK, note, active) |
 | `admin_config` | Cấu hình admin dạng key/value (vd `allowed_ips`) |
 | `login_attempts` | Log đăng nhập cho rate-limit |
 
@@ -85,7 +85,7 @@ Dịch vụ **tempmail công khai** chạy trên Cloudflare Workers + D1: tạo 
 | GET | `/logs?mail=&mode=latest\|full&limit=` | Đọc thư của một địa chỉ |
 | GET | `/otp?mail=&after=ISO&scan=` | Lấy OTP mới nhất |
 | GET | `/zones` | Danh sách domain Cloudflare (cho generator) |
-| GET | `/gmails` | Danh sách Gmail gốc active (cho generator) |
+| GET | `/gmails` | Danh sách email gốc active — mọi nhà cung cấp (cho generator) |
 | POST | `/register` `{email}` | Ghi log địa chỉ vừa tạo + IP người tạo |
 | DELETE | `/messages?mail=` | Xóa thư của **một** địa chỉ (bắt buộc `mail`) |
 | GET | `/health` | Kiểm tra trạng thái |
@@ -102,18 +102,22 @@ Dịch vụ **tempmail công khai** chạy trên Cloudflare Workers + D1: tạo 
 | GET | `/admin/api/stats` | Số liệu dashboard |
 | GET | `/admin/api/addresses` | Địa chỉ đã tạo (email, domain, IP, số lần, thời gian) |
 | GET / DELETE | `/admin/api/messages` | Danh sách thư / xóa **toàn bộ** thư |
-| GET / POST | `/admin/api/gmail` | Quản lý Gmail gốc (add/toggle/delete) |
+| GET / POST | `/admin/api/gmail` | Quản lý email gốc — mọi nhà cung cấp (add/toggle/delete) |
 | GET / POST | `/admin/api/security` | Xem/đặt danh sách IP được phép |
 
 ---
 
-## 📧 Cơ chế Gmail tempmail
+## 📧 Cơ chế Email tempmail (đa nhà cung cấp)
 
-Gmail bỏ qua dấu chấm và mọi thứ sau dấu `+`, nên `admin@gmail.com`, `a.d.min@gmail.com`, `admin+abc@gmail.com` đều về **chung một hộp thư**. Hệ thống tận dụng điều này:
+Nhiều nhà cung cấp cho phép **sub-addressing** (biến thể cùng về một hộp thư):
+- **Gmail** bỏ qua dấu chấm và mọi thứ sau `+` → `admin@gmail.com`, `a.d.min@gmail.com`, `admin+abc@gmail.com` cùng một hộp.
+- **Outlook/Hotmail, GMX, mail.com, libero.it, …** hỗ trợ **+alias** → `user+abc@domain` về hộp `user@domain`.
 
-1. Admin thêm Gmail gốc (đã bật **auto-forward** về worker) trong tab *Gmail hệ thống*.
-2. Web random một Gmail gốc + sinh biến thể chấm/+alias để người dùng đăng ký dịch vụ.
-3. Mail gửi tới biến thể → về hộp Gmail gốc → forward về worker → lưu D1.
+Hệ thống tận dụng điều này:
+
+1. Admin thêm email gốc bất kỳ (đã bật **auto-forward** về worker) trong tab *Email hệ thống*.
+2. Web random một email gốc + sinh biến thể để người dùng đăng ký dịch vụ — **Gmail**: dấu chấm hoặc +alias; **nhà cung cấp khác**: chỉ +alias (dot-trick chỉ đúng với Gmail).
+3. Mail gửi tới biến thể → về hộp email gốc → forward về worker → lưu D1.
 4. `email()` trích địa chỉ nhận gốc từ header `To` của mail đã forward (Gmail giữ nguyên biến thể dấu chấm / +alias mà người gửi dùng), lưu đúng biến thể vào `recipient`.
 5. Khi đọc, worker khớp **chính xác** theo `recipient` — **mỗi biến thể là một hộp thư riêng biệt**, chỉ hiện đúng thư gửi tới biến thể đó (không đọc chung với biến thể khác).
 
@@ -161,7 +165,7 @@ npx wrangler deploy
 
 ### Email Routing & Gmail forward
 - **Cloudflare Email Routing**: bật cho domain → tạo *Catch-all route* → **Send to Worker** → `read-icloud-mail-worker`.
-- **Gmail**: Settings → Forwarding → thêm địa chỉ chuyển tiếp trỏ về một địa chỉ đang route vào worker; mã xác nhận forward sẽ hiện trong admin (*Thư đã nhận*). Sau đó thêm Gmail gốc trong admin (*Gmail hệ thống*).
+- **Email gốc (Gmail/Outlook/GMX/…)**: bật Forwarding của nhà cung cấp → trỏ về một địa chỉ đang route vào worker; mã xác nhận forward sẽ hiện trong admin (*Thư đã nhận*). Sau đó thêm email gốc trong admin (*Email hệ thống*).
 - **Custom domain**: dùng Workers Custom Domains để trỏ `tempmail.<domain>` vào worker (tự tạo DNS + SSL).
 
 ### Secrets & Vars
@@ -216,6 +220,7 @@ npx wrangler dev      # chạy local
 - **UI redesign** — chuyển sang phong cách Apple Mail 3 khung (light).
 - **Admin panel** — tracking địa chỉ + IP, dashboard, quản lý, bảo mật phiên + khóa IP.
 - **Gmail tempmail** — dot-trick + plus-alias; mỗi biến thể là hộp thư riêng (khớp chính xác `recipient`).
+- **Email đa nhà cung cấp** — thêm tài khoản gốc bất kỳ (Outlook/Hotmail, GMX, mail.com, libero.it, …); generator sinh +alias (Gmail thêm dot-trick).
 - **Public mode** — bỏ VIEW_TOKEN/Worker URL ở client; đọc/tạo công khai, xóa toàn bộ chỉ trong admin.
 
 ## License
