@@ -244,7 +244,9 @@ export const ADMIN_HTML = `<!DOCTYPE html>
   var state={authed:false,tab:'addresses',msgs:[],view:'html',sel:null};
 
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-  function fmt(ts){if(!ts)return '—';var d=new Date(ts);if(isNaN(d.getTime()))return esc(ts);return d.toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+  var TZ='Asia/Bangkok';
+  function parseTs(ts){if(ts==null||ts==='')return null;if(typeof ts==='number'){var dn=new Date(ts);return isNaN(dn.getTime())?null:dn;}var s=String(ts).trim();if(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(s))s=s.replace(' ','T')+'Z';var d=new Date(s);return isNaN(d.getTime())?null:d;}
+  function fmt(ts){var d=parseTs(ts);if(!d)return esc(String(ts||'—'));return d.toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:TZ})}
   function toast(msg,kind){var e=document.createElement('div');e.className='toast '+(kind||'ok');e.innerHTML=msg;$('toasts').appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s'},2600);setTimeout(function(){e.remove()},3000)}
 
   function api(path,opts){
