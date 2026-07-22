@@ -808,10 +808,10 @@ async function handleAdmin(request: Request, env: Env, url: URL): Promise<Respon
   if (path === "/admin/api/stats") {
     try {
       const q = async (sql: string) => (await env.DB_OTP_MAIL.prepare(sql).first<{ c: number }>())?.c ?? 0;
-      const addresses_today = await q(`SELECT COUNT(*) AS c FROM addresses WHERE date(created_at) = date('now')`);
+      const addresses_today = await q(`SELECT COUNT(*) AS c FROM addresses WHERE date(created_at, '+7 hours') = date('now', '+7 hours')`);
       const addresses_total = await q(`SELECT COUNT(*) AS c FROM addresses`);
       const messages_total = await q(`SELECT COUNT(*) AS c FROM messages`);
-      const messages_today = await q(`SELECT COUNT(*) AS c FROM messages WHERE date(received_at) = date('now')`);
+      const messages_today = await q(`SELECT COUNT(*) AS c FROM messages WHERE date(received_at, '+7 hours') = date('now', '+7 hours')`);
       return adminJson({ addresses_today, addresses_total, messages_total, messages_today });
     } catch (err) {
       return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
