@@ -657,9 +657,33 @@
       .replace(/\s(href|src|action|formaction)\s*=\s*(["']?)\s*javascript:[^"'\s>]*\2/gi, '');
   }
 
+  // Detect if string looks like raw base64 (no spaces, only base64 chars, reasonably long)
+  function looksLikeBase64(s) {
+    if (!s || s.length < 50) return false;
+    const compact = s.replace(/\s/g, '');
+    return /^[A-Za-z0-9+/]+=*$/.test(compact) && compact.length > 50;
+  }
+
+  function tryBase64Decode(s) {
+    try {
+      const compact = s.replace(/\s/g, '');
+      const padded = compact + '='.repeat((4 - compact.length % 4) % 4);
+      return decodeURIComponent(escape(atob(padded)));
+    } catch { return s; }
+  }
+
   function renderMsg(m, i) {
-    const html = m.bodyHtml || m.html || '';
-    const text = m.bodyText || m.text || '';
+    let html = m.bodyHtml || m.html || '';
+    let text = m.bodyText || m.text || '';
+    // Failsafe: if body looks like raw base64, try to decode it client-side
+    if (looksLikeBase64(text)) {
+      const decoded = tryBase64Decode(text);
+      if (decoded !== text) text = decoded;
+    }
+    if (looksLikeBase64(html)) {
+      const decoded = tryBase64Decode(html);
+      if (decoded !== html) html = decoded;
+    }
     const body = text || stripHtml(html);
     const otp = extractOTP(body);
     const links = extractLinks(html, body);
