@@ -453,7 +453,7 @@
       <div class="gen">
         <div class="gen-seg">
           <button id="modeDomain" class="active" type="button">Domain</button>
-          <button id="modeGmail" type="button">Gmail</button>
+          <button id="modeGmail" type="button">Email</button>
         </div>
 
         <div id="genDomainView">
@@ -803,10 +803,10 @@
         state.gmails = (r.data.gmails || []).filter(Boolean);
         lsSet('tmv3_gmails', state.gmails);
         renderFoot();
-        if (!silent) toast('Đã tải <b>'+state.gmails.length+' Gmail</b>');
+        if (!silent) toast('Đã tải <b>'+state.gmails.length+' email</b>');
         return true;
       })
-      .catch(function(){ if (!silent) toast('Lỗi mạng khi tải Gmail', 'err'); return false; });
+      .catch(function(){ if (!silent) toast('Lỗi mạng khi tải email', 'err'); return false; });
   }
   function renderGmailPreview(){
     var el = $('gmailPreview'); if (!el) return;
@@ -814,11 +814,13 @@
     el.classList.toggle('empty', !state.gmailPreview);
   }
   function randStr(n){ var c='abcdefghijklmnopqrstuvwxyz0123456789', s=''; for (var i=0;i<n;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
-  function gmailVariant(base){
-    // local part sạch (bỏ dấu chấm + phần +alias cũ)
+  function mailVariant(base){
+    // Sinh biến thể theo domain: Gmail dùng dấu chấm HOẶC +alias; provider khác chỉ +alias.
     var at = base.lastIndexOf('@');
     var local = base.slice(0, at).replace(/\./g,'').split('+')[0];
-    var useDot = Math.random() < 0.5 && local.length >= 2;
+    var domain = base.slice(at + 1).toLowerCase();
+    var isGmail = /^(gmail|googlemail)\.com$/.test(domain);
+    var useDot = isGmail && Math.random() < 0.5 && local.length >= 2;
     if (useDot){
       // chèn 1..3 dấu chấm ở vị trí ngẫu nhiên giữa các ký tự (không đầu/cuối, không liền nhau)
       var positions = []; for (var i=1;i<local.length;i++) positions.push(i);
@@ -826,18 +828,18 @@
       var k = Math.min(positions.length, 1 + Math.floor(Math.random()*3));
       var chosen = positions.slice(0,k).sort(function(a,b){ return a-b; });
       var out=''; for (var j=0;j<local.length;j++){ out+=local[j]; if (chosen.indexOf(j+1)>=0 && j+1<local.length) out+='.'; }
-      return out + '@gmail.com';
+      return out + '@' + domain;
     }
-    return local + '+' + randStr(5 + Math.floor(Math.random()*4)) + '@gmail.com';
+    return local + '+' + randStr(5 + Math.floor(Math.random()*4)) + '@' + domain;
   }
   function gmailGenerate(){
-    if (!state.gmails.length) { toast('Chưa có Gmail trong hệ thống — thêm trong trang admin /admin', 'warn'); return; }
+    if (!state.gmails.length) { toast('Chưa có email nào trong hệ thống — thêm trong trang admin /admin', 'warn'); return; }
     var base = state.gmails[Math.floor(Math.random()*state.gmails.length)];
-    state.gmailPreview = normEmail(gmailVariant(base));
+    state.gmailPreview = normEmail(mailVariant(base));
     renderGmailPreview();
   }
   function gmailCreateFromPreview(){
-    if (!state.gmails.length) { toast('Chưa có Gmail trong hệ thống — thêm trong trang admin /admin', 'warn'); return; }
+    if (!state.gmails.length) { toast('Chưa có email nào trong hệ thống — thêm trong trang admin /admin', 'warn'); return; }
     if (!state.gmailPreview) { gmailGenerate(); }   // chưa xem thử thì sinh một cái để tạo
     var em = state.gmailPreview;
     if (!em) return;
@@ -957,7 +959,7 @@
     var c = $('listpane');
     if (!state.active) {
       c.innerHTML = '<div class="void">'+ICON_MAIL.replace('<svg','<svg style="width:54px;height:54px"')
-        +'<div class="h">Chưa chọn hộp thư</div><div class="s">Tạo địa chỉ tạm mới ở thanh bên — username faker, domain ngẫu nhiên hoặc Gmail của hệ thống.</div>'
+        +'<div class="h">Chưa chọn hộp thư</div><div class="s">Tạo địa chỉ tạm mới ở thanh bên — username faker, domain ngẫu nhiên hoặc email của hệ thống.</div>'
         +'</div>';
       return;
     }

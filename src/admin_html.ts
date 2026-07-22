@@ -185,7 +185,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     <div class="tabs">
       <button data-tab="addresses" class="active">Địa chỉ đã tạo</button>
       <button data-tab="messages">Thư đã nhận</button>
-      <button data-tab="gmail">Gmail hệ thống</button>
+      <button data-tab="gmail">Email hệ thống</button>
       <button data-tab="security">Bảo mật</button>
     </div>
 
@@ -215,15 +215,15 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     <div id="tab-gmail" class="tabview" style="display:none">
       <div class="panel">
         <div class="phead">
-          <span class="t">Gmail đã forward vào hệ thống</span>
+          <span class="t">Email đã forward vào hệ thống</span>
           <span class="sp"></span>
         </div>
         <div class="sec-row" style="gap:8px">
-          <input id="gmEmail" class="gm-inp" type="text" placeholder="vd: admin@gmail.com" spellcheck="false"/>
+          <input id="gmEmail" class="gm-inp" type="text" placeholder="vd: user@gmail.com, user@outlook.com, user@gmx.net…" spellcheck="false"/>
           <input id="gmNote" class="gm-inp" type="text" placeholder="ghi chú (tùy chọn)"/>
-          <button class="btn primary" id="gmAdd">Thêm Gmail</button>
+          <button class="btn primary" id="gmAdd">Thêm email</button>
         </div>
-        <div class="warn-box" style="background:rgba(0,122,255,.07);border-color:rgba(0,122,255,.2);color:var(--text2)">Chỉ thêm Gmail bạn đã cấu hình <b>tự động chuyển tiếp (forward)</b> về worker. Người dùng ngoài sẽ random biến thể (chấm / +alias) từ các Gmail này.</div>
+        <div class="warn-box" style="background:rgba(0,122,255,.07);border-color:rgba(0,122,255,.2);color:var(--text2)">Chỉ thêm email bạn đã cấu hình <b>tự động chuyển tiếp (forward)</b> về worker. Người dùng sẽ random biến thể từ các email này — <b>Gmail</b> dùng dấu chấm hoặc +alias, các nhà cung cấp khác dùng <b>+alias</b>.</div>
         <div class="tblwrap" id="gmTbl"></div>
       </div>
     </div>
@@ -439,8 +439,8 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     api('gmail').then(function(r){if(!r.ok)return;renderGmail(r.data.rows||[])}).catch(function(){});
   }
   function renderGmail(rows){
-    if(!rows.length){$('gmTbl').innerHTML='<div class="empty">'+IC_MAIL.replace('<svg','<svg style="width:44px;height:44px"')+'<div>Chưa có Gmail nào. Thêm Gmail gốc đã forward về worker ở trên.</div></div>';return}
-    var h='<table><thead><tr><th>Gmail gốc</th><th>Ghi chú</th><th>Trạng thái</th><th>Thêm lúc</th><th></th></tr></thead><tbody>';
+    if(!rows.length){$('gmTbl').innerHTML='<div class="empty">'+IC_MAIL.replace('<svg','<svg style="width:44px;height:44px"')+'<div>Chưa có email nào. Thêm email gốc đã forward về worker ở trên.</div></div>';return}
+    var h='<table><thead><tr><th>Email gốc</th><th>Ghi chú</th><th>Trạng thái</th><th>Thêm lúc</th><th></th></tr></thead><tbody>';
     rows.forEach(function(g){
       var on=Number(g.active)===1;
       h+='<tr><td class="mono">'+esc(g.email)+'</td><td>'+esc(g.note||'—')+'</td>'
@@ -453,7 +453,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     Array.prototype.forEach.call($('gmTbl').querySelectorAll('.lnk'),function(el){
       el.addEventListener('click',function(){
         var act=el.getAttribute('data-act'),email=el.getAttribute('data-email');
-        if(act==='delete'&&!confirm('Xóa Gmail '+email+' khỏi hệ thống?'))return;
+        if(act==='delete'&&!confirm('Xóa email '+email+' khỏi hệ thống?'))return;
         api('gmail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:act,email:email})})
           .then(function(r){if(r.ok){toast('Đã cập nhật');loadGmail();loadStats()}else toast(esc(r.data.error||'Lỗi'),'err')});
       });
@@ -462,7 +462,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
   $('gmAdd').addEventListener('click',function(){
     var email=($('gmEmail').value||'').trim();
     var note=($('gmNote').value||'').trim();
-    if(!/@(gmail|googlemail)\\.com$/i.test(email)){toast('Chỉ chấp nhận địa chỉ @gmail.com','err');return}
+    if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(email)){toast('Địa chỉ email không hợp lệ','err');return}
     api('gmail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',email:email,note:note})})
       .then(function(r){if(r.ok){toast('Đã thêm <b>'+esc(email)+'</b>');$('gmEmail').value='';$('gmNote').value='';loadGmail();loadStats()}else toast(esc(r.data.error||'Lỗi'),'err')});
   });
