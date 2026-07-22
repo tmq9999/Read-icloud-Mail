@@ -110,7 +110,12 @@ function decodeQuotedPrintable(s: string, charset = "utf-8"): string {
 }
 
 function decodeBase64(s: string, charset = "utf-8"): string {
-  const bin = atob(s.replace(/\s/g, ""));
+  // Remove ALL whitespace then strip any non-base64 chars (e.g. trailing MIME boundary fragments)
+  const cleaned = s.replace(/\s/g, "").replace(/[^A-Za-z0-9+/=]/g, "");
+  if (!cleaned) return "";
+  // Fix padding
+  const padded = cleaned + "=".repeat((4 - (cleaned.length % 4)) % 4);
+  const bin = atob(padded);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return decodeBytes(bytes, charset);
@@ -163,10 +168,12 @@ function stripHtmlTags(s: string): string {
 }
 
 function parseMimePart(part: string): { contentType: string; encoding: string; charset: string; body: string } {
-  const headerEnd = part.search(/\r?\n\r?\n/);
-  if (headerEnd === -1) return { contentType: "", encoding: "", charset: "", body: part };
-  const headerSection = part.slice(0, headerEnd).toLowerCase();
-  const body = part.slice(headerEnd).replace(/^\r?\n\r?\n/, "");
+  // Strip leading CRLF/LF that appears after boundary split
+  const trimmedPart = part.replace(/^(\r?\n)+/, "");
+  const headerEnd = trimmedPart.search(/\r?\n\r?\n/);
+  if (headerEnd === -1) return { contentType: "", encoding: "", charset: "", body: trimmedPart };
+  const headerSection = trimmedPart.slice(0, headerEnd).toLowerCase();
+  const body = trimmedPart.slice(headerEnd).replace(/^\r?\n\r?\n/, "");
   const ctMatch = headerSection.match(/content-type:\s*([^;\r\n]+)/);
   const encMatch = headerSection.match(/content-transfer-encoding:\s*([^\r\n]+)/);
   const csMatch = headerSection.match(/charset="?([^"\r\n;]+)"?/);
@@ -233,7 +240,13 @@ async function extractBodies(raw: ReadableStream): Promise<{ text: string; html:
       let body = bodyStart !== -1 ? rawText.slice(bodyStart).replace(/^\r?\n\r?\n/, "") : rawText;
       if (topEnc === "quoted-printable") body = decodeQuotedPrintable(body, topCharset);
       else if (topEnc === "base64") {
-        try { body = decodeBase64(body, topCharset); } catch { /* ignore */ }
+        try { body = decodeBase64(body, topCharset); } catch (e) {
+          // Last resort: try stripping everything to just base64 chars
+          try {
+            const b64only = body.replace(/\s/g, "").replace(/[^A-Za-z0-9+/=]/g, "");
+            if (b64only.length > 20) body = decodeBase64(b64only, topCharset);
+          } catch { /* ignore */ }
+        }
       }
       if (body.includes("<html") || body.includes("<!DOCTYPE") || body.includes("<div")) {
         html = body;
