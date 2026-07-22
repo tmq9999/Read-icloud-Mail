@@ -437,7 +437,6 @@
       </div>
 
       <div class="tm-row">
-        <button class="btn btn-secondary" onclick="loadCfDomains()">🔄 Tải domains</button>
         <button class="btn btn-secondary" onclick="tmRandomUsername()">🎲 Random</button>
         <button class="btn btn-primary" onclick="tmCreate()">✔ Tạo &amp; Thêm</button>
       </div>
@@ -535,6 +534,10 @@
     hdr.classList.toggle('open', open);
     chv.classList.toggle('open', open);
     localStorage.setItem('tm_open', open ? '1' : '0');
+    // Auto-load domains when panel is opened and not yet loaded
+    if (open && document.getElementById('tmDomain').disabled) {
+      loadCfDomains();
+    }
   }
   async function loadCfDomains() {
     const apiUrl = getBaseUrl().replace('/logs', '/zones');
@@ -585,6 +588,17 @@
       document.getElementById('tmHeader').classList.add('open');
       document.getElementById('tmChevron').classList.add('open');
     }
+    // Auto-load domains if token already saved
+    if (document.getElementById('tokenInput').value.trim()) {
+      loadCfDomains();
+    }
+  });
+
+  // Also auto-load when token is typed/pasted
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('tokenInput').addEventListener('change', () => {
+      if (document.getElementById('tokenInput').value.trim()) loadCfDomains();
+    });
   });
   // ─────────────────────────────────────────────────────────────────────
 
