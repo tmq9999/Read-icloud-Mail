@@ -3,6 +3,8 @@ export interface Env {
   VIEW_TOKEN: string;
   LOG_RETENTION_DAYS?: string;
   MAX_MESSAGES_PER_MAILBOX?: string;
+  CF_API_TOKEN?: string;   // Cloudflare API token to list zones
+  CF_ACCOUNT_ID?: string;  // Cloudflare Account ID (optional filter)
 }
 
 interface StoredMessage {
@@ -383,6 +385,37 @@ async function handleLogsRequest(request: Request, env: Env): Promise<Response> 
   }
 }
 
+// GET /zones — proxy Cloudflare API to list domains on the account
+async function handleZonesRequest(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (request.method !== "GET") return errorResponse("Method not allowed", 405);
+
+  const url = new URL(request.url);
+  if (!authCheck(request, url, env)) return errorResponse("Unauthorized", 401);
+
+  if (!env.CF_API_TOKEN) return errorResponse("CF_API_TOKEN secret not configured on worker", 503);
+
+  try {
+    const cfUrl = env.CF_ACCOUNT_ID
+      ? `https://api.cloudflare.com/client/v4/zones?account.id=${env.CF_ACCOUNT_ID}&per_page=200&status=active`
+      : `https://api.cloudflare.com/client/v4/zones?per_page=200&status=active`;
+
+    const res = await fetch(cfUrl, {
+      headers: {
+        Authorization: `Bearer ${env.CF_API_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    });
+    const data: any = await res.json();
+    if (!data.success) return errorResponse("Cloudflare API error: " + JSON.stringify(data.errors), 502);
+
+    const zones = (data.result || []).map((z: any) => ({ id: z.id, name: z.name, status: z.status }));
+    return jsonResponse({ zones });
+  } catch (err) {
+    return errorResponse(`Fetch error: ${err instanceof Error ? err.message : String(err)}`, 500);
+  }
+}
+
 async function handleDeleteRequest(request: Request, env: Env): Promise<Response> {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -521,6 +554,9 @@ export default {
     if (url.pathname === "/messages") {
       return handleDeleteRequest(request, env);
     }
+    if (url.pathname === "/zones") {
+      return handleZonesRequest(request, env);
+    }
     if (url.pathname === "/health") {
       return jsonResponse({
         ok: true,
@@ -529,6 +565,7 @@ export default {
           "GET /logs": "?mail=&mode=latest|full&limit=&token=",
           "GET /otp": "?mail=&after=ISO&scan=5&token=",
           "DELETE /messages": "?mail= (omit for all)&token=",
+          "GET /zones": "?token= — list Cloudflare domains",
           "GET /health": "status check",
         },
       });
