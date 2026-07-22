@@ -90,7 +90,7 @@ Dịch vụ **tempmail công khai** chạy trên Cloudflare Workers + D1: tạo 
 | DELETE | `/messages?mail=` | Xóa thư của **một** địa chỉ (bắt buộc `mail`) |
 | GET | `/health` | Kiểm tra trạng thái |
 
-> Địa chỉ Gmail được khớp theo **canonical** ở `/logs`, `/otp`, `/messages` (bỏ dấu chấm + phần sau `+`).
+> `/logs`, `/otp`, `/messages` khớp **chính xác** theo `recipient` — mỗi biến thể dấu chấm / +alias là một hộp thư **riêng biệt**, không đọc chung.
 
 ### Quản trị (bắt buộc phiên đăng nhập)
 | Method | Path | Mô tả |
@@ -114,7 +114,8 @@ Gmail bỏ qua dấu chấm và mọi thứ sau dấu `+`, nên `admin@gmail.com
 1. Admin thêm Gmail gốc (đã bật **auto-forward** về worker) trong tab *Gmail hệ thống*.
 2. Web random một Gmail gốc + sinh biến thể chấm/+alias để người dùng đăng ký dịch vụ.
 3. Mail gửi tới biến thể → về hộp Gmail gốc → forward về worker → lưu D1.
-4. Khi đọc, worker khớp theo **canonical** (bỏ chấm + phần `+`, chuẩn hóa `gmail.com`) nên mọi biến thể của một Gmail gốc gộp về một hộp — **không bao giờ mất OTP**.
+4. `email()` trích địa chỉ nhận gốc từ header `To` của mail đã forward (Gmail giữ nguyên biến thể dấu chấm / +alias mà người gửi dùng), lưu đúng biến thể vào `recipient`.
+5. Khi đọc, worker khớp **chính xác** theo `recipient` — **mỗi biến thể là một hộp thư riêng biệt**, chỉ hiện đúng thư gửi tới biến thể đó (không đọc chung với biến thể khác).
 
 > **Cấu hình forward (Gmail):** Settings → *Forwarding and POP/IMAP* → **Add a forwarding address** (nhập địa chỉ đích, vd `inbox@<domain>`) → nhập mã xác nhận (mã này về chính hộp tempmail của địa chỉ đích) → chọn **Forward a copy** → **Save Changes**.
 > `email()` handler trích địa chỉ nhận gốc từ header `To` của mail đã forward nên vẫn giữ đúng biến thể; các mail hệ thống của Google (`forwarding-noreply@google.com`) gửi thẳng tới địa chỉ đích và nằm dưới chính địa chỉ đó.
@@ -214,7 +215,7 @@ npx wrangler dev      # chạy local
 
 - **UI redesign** — chuyển sang phong cách Apple Mail 3 khung (light).
 - **Admin panel** — tracking địa chỉ + IP, dashboard, quản lý, bảo mật phiên + khóa IP.
-- **Gmail tempmail** — dot-trick + plus-alias, khớp canonical khi đọc.
+- **Gmail tempmail** — dot-trick + plus-alias; mỗi biến thể là hộp thư riêng (khớp chính xác `recipient`).
 - **Public mode** — bỏ VIEW_TOKEN/Worker URL ở client; đọc/tạo công khai, xóa toàn bộ chỉ trong admin.
 
 ## License
