@@ -71,6 +71,53 @@
     /* Main layout */
     .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; width: 100%; }
 
+    /* Domain manager card */
+    .domain-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 14px;
+    }
+    .domain-card-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .domain-card-header h3 { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; flex: 1; }
+    .domain-card-header .toggle-icon { font-size: 12px; color: var(--text-muted); transition: transform .2s; }
+    .domain-card-header .toggle-icon.open { transform: rotate(180deg); }
+    .domain-body { display: none; }
+    .domain-body.open { display: block; }
+    .domain-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; min-height: 36px; }
+    .domain-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.35);
+      border-radius: 20px; padding: 4px 10px 4px 12px;
+      font-size: 13px; color: var(--accent2);
+    }
+    .domain-tag button {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
+    }
+    .domain-tag button:hover { color: var(--danger); }
+    .domain-add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .domain-add-row input { flex: 1; }
+    .domain-add-row .btn { flex: none; padding: 8px 14px; }
+    .gen-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .gen-row label { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text-muted); margin-bottom: 0; white-space: nowrap; }
+    .gen-count { width: 60px; text-align: center; padding: 7px 8px; }
+    .gen-result { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .gen-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 4px 10px; font-size: 12px; color: var(--text);
+      cursor: pointer; transition: border-color .15s;
+    }
+    .gen-chip:hover { border-color: var(--accent); color: var(--accent2); }
+    .gen-chip .add-icon { font-size: 14px; color: var(--success); }
+
     /* Input card */
     .card {
       background: var(--surface);
@@ -341,6 +388,31 @@
 </div>
 
 <div class="container">
+  <!-- Domain & TempMail Generator card -->
+  <div class="domain-card">
+    <div class="domain-card-header" onclick="toggleDomainCard()">
+      <span>🌐</span>
+      <h3>My Email Aliases — Tạo Temp Mail</h3>
+      <span class="toggle-icon" id="domainToggleIcon">▼</span>
+    </div>
+    <div class="domain-body" id="domainBody">
+      <label style="margin-bottom:8px">Domains của bạn</label>
+      <div class="domain-list" id="domainList"></div>
+      <div class="domain-add-row">
+        <input type="text" id="domainInput" placeholder="vd: benobaty.online" onkeydown="if(event.key==='Enter')addDomain()" />
+        <button class="btn btn-secondary" onclick="addDomain()">+ Thêm domain</button>
+      </div>
+      <div class="gen-row">
+        <label>Tạo</label>
+        <input type="number" class="gen-count" id="genCount" value="3" min="1" max="20" />
+        <label>địa chỉ ngẫu nhiên</label>
+        <button class="btn btn-primary" style="padding:7px 16px;font-size:13px" onclick="generateEmails()">🎲 Tạo ngẫu nhiên</button>
+        <button class="btn btn-secondary" style="padding:7px 14px;font-size:13px" onclick="addAllGenerated()">✚ Thêm tất cả vào ô</button>
+      </div>
+      <div class="gen-result" id="genResult"></div>
+    </div>
+  </div>
+
   <!-- Input card -->
   <div class="card">
     <div class="form-grid">
@@ -410,6 +482,106 @@
 <div class="toast" id="toast"></div>
 
 <script>
+  // ── Domain & TempMail generator ──────────────────────────────────────
+  let userDomains = JSON.parse(localStorage.getItem('mailviewer_domains') || '[]');
+  let generatedEmails = [];
+
+  function saveDomains() { localStorage.setItem('mailviewer_domains', JSON.stringify(userDomains)); }
+
+  function renderDomains() {
+    const list = document.getElementById('domainList');
+    if (!userDomains.length) {
+      list.innerHTML = '<span style="font-size:13px;color:var(--text-muted)">Chưa có domain nào. Thêm domain của bạn bên dưới.</span>';
+      return;
+    }
+    list.innerHTML = userDomains.map((d, i) =>
+      `<span class="domain-tag">@${d}<button onclick="removeDomain(${i})" title="Xóa">&times;</button></span>`
+    ).join('');
+  }
+
+  function addDomain() {
+    const inp = document.getElementById('domainInput');
+    let val = inp.value.trim().toLowerCase().replace(/^@/, '').replace(/^\./, '');
+    if (!val || !val.includes('.')) { showToast('Domain không hợp lệ', 'error'); return; }
+    if (userDomains.includes(val)) { showToast('Domain đã tồn tại', 'error'); return; }
+    userDomains.push(val);
+    saveDomains();
+    renderDomains();
+    inp.value = '';
+    showToast(`✅ Đã thêm @${val}`);
+  }
+
+  function removeDomain(i) {
+    userDomains.splice(i, 1);
+    saveDomains();
+    renderDomains();
+    renderGenResult();
+  }
+
+  function randStr(len) {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let s = '';
+    for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+
+  function generateEmails() {
+    if (!userDomains.length) { showToast('Thêm ít nhất 1 domain trước', 'error'); return; }
+    const count = Math.min(Math.max(parseInt(document.getElementById('genCount').value) || 3, 1), 20);
+    generatedEmails = [];
+    for (let i = 0; i < count; i++) {
+      const domain = userDomains[Math.floor(Math.random() * userDomains.length)];
+      generatedEmails.push(`${randStr(8)}@${domain}`);
+    }
+    renderGenResult();
+  }
+
+  function renderGenResult() {
+    const container = document.getElementById('genResult');
+    if (!generatedEmails.length) { container.innerHTML = ''; return; }
+    container.innerHTML = generatedEmails.map((e, i) =>
+      `<span class="gen-chip" onclick="addOneGenerated('${e}')" title="Click để thêm vào ô email">
+        <span class="add-icon">+</span>${e}
+      </span>`
+    ).join('');
+  }
+
+  function addOneGenerated(email) {
+    const inp = document.getElementById('emailInput');
+    const current = inp.value.trim();
+    const existing = current ? current.split(/[\n,]+/).map(e => e.trim().toLowerCase()).filter(Boolean) : [];
+    if (!existing.includes(email.toLowerCase())) {
+      inp.value = (current ? current + '\n' : '') + email;
+      showToast(`✅ Đã thêm ${email}`);
+    } else {
+      showToast('Email đã có trong ô', 'error');
+    }
+  }
+
+  function addAllGenerated() {
+    if (!generatedEmails.length) { showToast('Tạo email trước đã', 'error'); return; }
+    generatedEmails.forEach(addOneGenerated);
+  }
+
+  function toggleDomainCard() {
+    const body = document.getElementById('domainBody');
+    const icon = document.getElementById('domainToggleIcon');
+    const open = body.classList.toggle('open');
+    icon.classList.toggle('open', open);
+    localStorage.setItem('mailviewer_domain_open', open ? '1' : '0');
+  }
+
+  // Init domains on load
+  (function initDomains() {
+    renderDomains();
+    // Restore open state
+    if (localStorage.getItem('mailviewer_domain_open') === '1') {
+      document.getElementById('domainBody').classList.add('open');
+      document.getElementById('domainToggleIcon').classList.add('open');
+    }
+  })();
+  // ─────────────────────────────────────────────────────────────────────
+
   const DEFAULT_API = 'https://read-icloud-mail-worker.tranminhquang-tmq9999.workers.dev/logs';
   let emails = [];
   let activeEmail = '';
