@@ -332,8 +332,15 @@ export const ADMIN_HTML = `<!DOCTYPE html>
   function loadMessages(){
     api('messages').then(function(r){if(!r.ok)return;state.msgs=r.data.rows||[];renderMsg()}).catch(function(){});
   }
+  // Fallback giải mã nội dung (giống trang public): base64 và quoted-printable
+  function looksB64(s){if(!s||s.length<40)return false;var t=s.trim();return /^[A-Za-z0-9+/=\\r\\n]+$/.test(t)&&!/\\s[a-z]{2,}\\s/.test(t);}
+  function b64d(s){try{var b=atob(String(s).replace(/\\s+/g,''));try{return decodeURIComponent(escape(b));}catch(e){return b;}}catch(e){return s;}}
+  function hasQP(s){return /=\\r?\\n/.test(s)||/=[0-9A-Fa-f]{2}/.test(s);}
+  function qpd(s){var t=String(s).replace(/=\\r?\\n/g,'');var bin='';for(var i=0;i<t.length;i++){var c=t.charAt(i);if(c==='='&&/^[0-9A-Fa-f]{2}$/.test(t.substr(i+1,2))){bin+=String.fromCharCode(parseInt(t.substr(i+1,2),16));i+=2;}else{bin+=c;}}try{return decodeURIComponent(escape(bin));}catch(e){return bin;}}
+  function decodeBody(s){if(!s)return s;if(looksB64(s)){var d=b64d(s);if(d&&d!==s)s=d;}if(hasQP(s))s=qpd(s);return s;}
+  function dec(m){if(!m.__d){m.__d={text:decodeBody(m.body_text||''),html:decodeBody(m.body_html||'')};}return m.__d;}
   function otpOf(m){
-    var t=(m.subject||'')+' '+(m.body_text||'');
+    var t=(m.subject||'')+' '+(dec(m).text||'');
     var lab=t.match(/(?:code|otp|verification code|m[aã] x[aá]c nh[aậ]n|m[aã] x[aá]c minh|m[aã] OTP)[^\\d]{0,30}(\\d{4,8})/i);
     if(lab)return lab[1];
     var st=t.match(/(?:^|\\s)(\\d{4,8})(?:\\s|$)/);
@@ -361,7 +368,7 @@ export const ADMIN_HTML = `<!DOCTYPE html>
   function openMsg(id){
     var m=null;state.msgs.forEach(function(x){if(String(x.id)===String(id))m=x});
     if(!m)return;state.view='html';
-    var o=otpOf(m);var hasHtml=!!(m.body_html&&m.body_html.trim());
+    var o=otpOf(m);var hasHtml=!!(dec(m).html&&dec(m).html.trim());
     var h='<div class="mh"><div class="meta"><div class="subj">'+esc(m.subject||'(không tiêu đề)')+'</div>'
       +'<div class="kv">Từ: '+esc(m.sender||'—')+'</div><div class="kv">Đến: '+esc(m.recipient||'—')+'</div><div class="kv">'+fmt(m.received_at)+'</div></div>'
       +'<div class="x" id="mClose">&times;</div></div>';
@@ -378,11 +385,11 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     if(st)st.addEventListener('click',function(){state.view='text';st.classList.add('active');sh.classList.remove('active');renderMsgBody(m)});
   }
   function renderMsgBody(m){
-    var hasHtml=!!(m.body_html&&m.body_html.trim());
+    var d=dec(m);var hasHtml=!!(d.html&&d.html.trim());
     if(state.view==='html'&&hasHtml){
-      $('mContent').innerHTML='<iframe class="mframe" sandbox="" srcdoc="'+esc(sanitize(m.body_html))+'"></iframe>';
+      $('mContent').innerHTML='<iframe class="mframe" sandbox="" srcdoc="'+esc(sanitize(d.html))+'"></iframe>';
     }else{
-      $('mContent').innerHTML='<div class="mbody">'+esc(m.body_text||m.body_html||'(thư trống)')+'</div>';
+      $('mContent').innerHTML='<div class="mbody">'+esc(d.text||d.html||'(thư trống)')+'</div>';
     }
   }
   function closeMsg(){$('msgOverlay').classList.remove('show')}
