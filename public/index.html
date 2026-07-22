@@ -601,6 +601,8 @@
       try { return decodeURIComponent(escape(b)); } catch(e){ return b; }
     } catch(e){ return s; }
   }
+  // Dọn return-path forward của Gmail: user+caf_=đích@gmail.com → user@gmail.com
+  function cleanSender(s){ return String(s==null?'':s).replace(/\+caf_=[^@>\s"']*(@)/i, '$1'); }
   function hasQP(s){ return /=\r?\n/.test(s) || /=[0-9A-Fa-f]{2}/.test(s); }
   function decodeQP(s){
     var t = String(s).replace(/=\r?\n/g, ''), bin = '';
@@ -665,7 +667,7 @@
     if (hasQP(text)) text = decodeQP(text);
     if (hasQP(html)) html = decodeQP(html);
     var body = text || stripHtml(html);
-    var from = m.from || m.sender || '—';
+    var from = cleanSender(m.from || m.sender || '—');
     var nameM = String(from).match(/^\s*"?([^"<]+?)"?\s*</);
     var fromName = nameM ? nameM[1].trim() : String(from).split('@')[0].replace(/[<>"]/g,'');
     return {
