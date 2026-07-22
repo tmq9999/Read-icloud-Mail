@@ -814,14 +814,21 @@
     el.classList.toggle('empty', !state.gmailPreview);
   }
   function randStr(n){ var c='abcdefghijklmnopqrstuvwxyz0123456789', s=''; for (var i=0;i<n;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
+  // Khả năng tạo biến thể theo nhà cung cấp:
+  //  'gmail' = dấu chấm hoặc +alias | 'plus' = chỉ +alias | 'none' = chỉ mail gốc (không alias)
+  var TM_PLUS_DOMAINS = ['outlook.com','outlook.com.vn','hotmail.com','hotmail.co.uk','live.com','live.co.uk','msn.com','icloud.com','me.com','mac.com','proton.me','protonmail.com','pm.me','fastmail.com'];
+  function aliasMode(domain){
+    if (/^(gmail|googlemail)\.com$/.test(domain)) return 'gmail';
+    if (TM_PLUS_DOMAINS.indexOf(domain) >= 0) return 'plus';
+    return 'none'; // gmx, mail.com, libero.it… và provider chưa rõ → dùng mail gốc
+  }
   function mailVariant(base){
-    // Sinh biến thể theo domain: Gmail dùng dấu chấm HOẶC +alias; provider khác chỉ +alias.
     var at = base.lastIndexOf('@');
-    var local = base.slice(0, at).replace(/\./g,'').split('+')[0];
     var domain = base.slice(at + 1).toLowerCase();
-    var isGmail = /^(gmail|googlemail)\.com$/.test(domain);
-    var useDot = isGmail && Math.random() < 0.5 && local.length >= 2;
-    if (useDot){
+    var mode = aliasMode(domain);
+    if (mode === 'none') return base.slice(0, at).toLowerCase() + '@' + domain; // giữ nguyên mail gốc
+    var local = base.slice(0, at).replace(/\./g,'').split('+')[0];
+    if (mode === 'gmail' && Math.random() < 0.5 && local.length >= 2){
       // chèn 1..3 dấu chấm ở vị trí ngẫu nhiên giữa các ký tự (không đầu/cuối, không liền nhau)
       var positions = []; for (var i=1;i<local.length;i++) positions.push(i);
       positions.sort(function(){ return Math.random()-0.5; });
