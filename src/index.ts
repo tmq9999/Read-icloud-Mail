@@ -1,3 +1,5 @@
+import { ADMIN_HTML } from "./admin_html";
+
 export interface Env {
   DB_OTP_MAIL: D1Database;
   VIEW_TOKEN: string;
@@ -5,6 +7,10 @@ export interface Env {
   MAX_MESSAGES_PER_MAILBOX?: string;
   CF_API_TOKEN?: string;   // Cloudflare API token to list zones
   CF_ACCOUNT_ID?: string;  // Cloudflare Account ID (optional filter)
+  // Admin auth (set via `wrangler secret put`)
+  ADMIN_USERNAME?: string;
+  ADMIN_PASSWORD?: string;
+  SESSION_SECRET?: string;
 }
 
 interface StoredMessage {
@@ -36,7 +42,7 @@ interface EmailMessage {
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
 };
 
@@ -542,9 +548,318 @@ async function handleOtpRequest(request: Request, env: Env): Promise<Response> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Address registration (log created address + creator IP)
+// ─────────────────────────────────────────────────────────────
+function getClientIp(request: Request): string {
+  return (
+    request.headers.get("CF-Connecting-IP") ||
+    (request.headers.get("X-Forwarded-For") || "").split(",")[0].trim() ||
+    ""
+  );
+}
+
+async function handleRegisterRequest(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (request.method !== "POST") return errorResponse("Method not allowed. Use POST.", 405);
+
+  const url = new URL(request.url);
+  if (!authCheck(request, url, env)) return errorResponse("Unauthorized", 401);
+
+  let body: any = {};
+  try { body = await request.json(); } catch { /* ignore */ }
+  const email = normalizeMailbox(typeof body?.email === "string" ? body.email : "");
+  if (!email || !email.includes("@") || !email.includes(".")) {
+    return errorResponse("Missing or invalid email", 422);
+  }
+  const domain = email.split("@")[1] || "";
+  const ip = getClientIp(request);
+  const ua = (request.headers.get("User-Agent") || "").slice(0, 300);
+
+  try {
+    await env.DB_OTP_MAIL.prepare(
+      `INSERT INTO addresses (email, domain, ip, user_agent, created_at, last_seen, hits)
+       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), 1)
+       ON CONFLICT(email) DO UPDATE SET
+         ip = excluded.ip,
+         user_agent = excluded.user_agent,
+         last_seen = datetime('now'),
+         hits = hits + 1`
+    ).bind(email, domain, ip, ua).run();
+    return jsonResponse({ ok: true, email });
+  } catch (err) {
+    return errorResponse(`Database error: ${err instanceof Error ? err.message : String(err)}`, 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Admin: crypto / session / cookie helpers
+// ─────────────────────────────────────────────────────────────
+function b64urlFromBytes(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64urlFromStr(s: string): string {
+  return b64urlFromBytes(new TextEncoder().encode(s));
+}
+function strFromB64url(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4);
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+async function hmacSign(secret: string, data: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return b64urlFromBytes(new Uint8Array(sig));
+}
+function constantTimeEqual(a: string, b: string): boolean {
+  const ea = new TextEncoder().encode(a);
+  const eb = new TextEncoder().encode(b);
+  if (ea.length !== eb.length) return false;
+  let r = 0;
+  for (let i = 0; i < ea.length; i++) r |= ea[i] ^ eb[i];
+  return r === 0;
+}
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+async function makeSession(env: Env, user: string): Promise<string> {
+  const payload = b64urlFromStr(JSON.stringify({ u: user, exp: Date.now() + SESSION_TTL_MS }));
+  const sig = await hmacSign(env.SESSION_SECRET || "", payload);
+  return payload + "." + sig;
+}
+async function verifySession(env: Env, token: string | null): Promise<{ u: string; exp: number } | null> {
+  if (!token || !env.SESSION_SECRET) return null;
+  const dot = token.lastIndexOf(".");
+  if (dot < 0) return null;
+  const payload = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  const expect = await hmacSign(env.SESSION_SECRET, payload);
+  if (!constantTimeEqual(sig, expect)) return null;
+  try {
+    const o = JSON.parse(strFromB64url(payload));
+    if (!o || typeof o.exp !== "number" || Date.now() > o.exp) return null;
+    return o;
+  } catch { return null; }
+}
+function parseCookies(request: Request): Record<string, string> {
+  const out: Record<string, string> = {};
+  const raw = request.headers.get("Cookie") || "";
+  raw.split(";").forEach((p) => {
+    const i = p.indexOf("=");
+    if (i > 0) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim());
+  });
+  return out;
+}
+const ADMIN_COOKIE = "admin_session";
+function sessionCookie(token: string, maxAgeSec: number): string {
+  return `${ADMIN_COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=${maxAgeSec}`;
+}
+function adminHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    ...(extra || {}),
+  };
+}
+function adminJson(data: unknown, status = 200, extra?: Record<string, string>): Response {
+  return new Response(JSON.stringify(data), { status, headers: adminHeaders(extra) });
+}
+
+async function getAllowedIps(db: D1Database): Promise<string[]> {
+  try {
+    const row = await db.prepare(`SELECT value FROM admin_config WHERE key = 'allowed_ips'`).first<{ value: string }>();
+    if (row && row.value) {
+      const arr = JSON.parse(row.value);
+      if (Array.isArray(arr)) return arr.filter((x) => typeof x === "string");
+    }
+  } catch { /* table may not exist yet */ }
+  return [];
+}
+async function setAllowedIps(db: D1Database, ips: string[]): Promise<void> {
+  await db.prepare(
+    `INSERT INTO admin_config (key, value) VALUES ('allowed_ips', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).bind(JSON.stringify(ips)).run();
+}
+async function adminSessionUser(request: Request, env: Env): Promise<string | null> {
+  const token = parseCookies(request)[ADMIN_COOKIE] || null;
+  const sess = await verifySession(env, token);
+  return sess ? sess.u : null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Admin router
+// ─────────────────────────────────────────────────────────────
+async function handleAdmin(request: Request, env: Env, url: URL): Promise<Response> {
+  const path = url.pathname;
+  const ip = getClientIp(request);
+
+  // IP allowlist (if configured) gates EVERYTHING under /admin, incl. the page + login.
+  // Return 404 to avoid revealing that an admin surface exists.
+  const allowed = await getAllowedIps(env.DB_OTP_MAIL);
+  if (allowed.length && allowed.indexOf(ip) < 0) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  // Serve the admin SPA shell.
+  if (path === "/admin" || path === "/admin/") {
+    return new Response(ADMIN_HTML, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  }
+
+  const adminConfigured = !!(env.ADMIN_USERNAME && env.ADMIN_PASSWORD && env.SESSION_SECRET);
+
+  // Login
+  if (path === "/admin/login") {
+    if (request.method !== "POST") return adminJson({ error: "Method not allowed" }, 405);
+    if (!adminConfigured) return adminJson({ error: "Admin chưa được cấu hình trên worker" }, 503);
+
+    // Rate limit: max 8 failed attempts / 15 min / IP
+    try {
+      const row = await env.DB_OTP_MAIL.prepare(
+        `SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND ok = 0 AND at > datetime('now','-15 minutes')`
+      ).bind(ip).first<{ c: number }>();
+      if (row && row.c >= 8) {
+        return adminJson({ error: "Quá nhiều lần thử. Vui lòng đợi 15 phút." }, 429);
+      }
+    } catch { /* table may not exist yet */ }
+
+    let body: any = {};
+    try { body = await request.json(); } catch { /* ignore */ }
+    const user = typeof body?.username === "string" ? body.username : "";
+    const pass = typeof body?.password === "string" ? body.password : "";
+    const ok = constantTimeEqual(user, env.ADMIN_USERNAME || "") &&
+               constantTimeEqual(pass, env.ADMIN_PASSWORD || "");
+
+    try {
+      await env.DB_OTP_MAIL.prepare(`INSERT INTO login_attempts (ip, ok) VALUES (?, ?)`).bind(ip, ok ? 1 : 0).run();
+      await env.DB_OTP_MAIL.prepare(`DELETE FROM login_attempts WHERE at < datetime('now','-1 day')`).run();
+    } catch { /* best effort */ }
+
+    if (!ok) return adminJson({ error: "Sai tên đăng nhập hoặc mật khẩu" }, 401);
+
+    const token = await makeSession(env, env.ADMIN_USERNAME || "admin");
+    return adminJson({ ok: true, user: env.ADMIN_USERNAME }, 200, {
+      "Set-Cookie": sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)),
+    });
+  }
+
+  // Logout
+  if (path === "/admin/logout") {
+    return adminJson({ ok: true }, 200, { "Set-Cookie": sessionCookie("", 0) });
+  }
+
+  // Session probe
+  if (path === "/admin/api/session") {
+    const user = await adminSessionUser(request, env);
+    return adminJson({ authed: !!user, user: user || null, configured: adminConfigured });
+  }
+
+  // Everything below requires a valid session
+  const user = await adminSessionUser(request, env);
+  if (!user) return adminJson({ error: "Unauthorized" }, 401);
+
+  if (path === "/admin/api/stats") {
+    try {
+      const q = async (sql: string) => (await env.DB_OTP_MAIL.prepare(sql).first<{ c: number }>())?.c ?? 0;
+      const addresses_today = await q(`SELECT COUNT(*) AS c FROM addresses WHERE date(created_at) = date('now')`);
+      const addresses_total = await q(`SELECT COUNT(*) AS c FROM addresses`);
+      const messages_total = await q(`SELECT COUNT(*) AS c FROM messages`);
+      const messages_today = await q(`SELECT COUNT(*) AS c FROM messages WHERE date(received_at) = date('now')`);
+      return adminJson({ addresses_today, addresses_total, messages_total, messages_today });
+    } catch (err) {
+      return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    }
+  }
+
+  if (path === "/admin/api/addresses") {
+    try {
+      const { results } = await env.DB_OTP_MAIL.prepare(
+        `SELECT email, domain, ip, user_agent, created_at, last_seen, hits
+         FROM addresses ORDER BY created_at DESC LIMIT 500`
+      ).all();
+      return adminJson({ rows: results || [] });
+    } catch (err) {
+      return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    }
+  }
+
+  if (path === "/admin/api/messages") {
+    if (request.method === "DELETE") {
+      try {
+        const result = await env.DB_OTP_MAIL.prepare(`DELETE FROM messages`).run();
+        return adminJson({ deleted: true, rows_deleted: result.meta?.changes ?? 0 });
+      } catch (err) {
+        return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+      }
+    }
+    try {
+      const { results } = await env.DB_OTP_MAIL.prepare(
+        `SELECT id, recipient, sender, subject, body_text, body_html, received_at
+         FROM messages ORDER BY received_at DESC LIMIT 500`
+      ).all();
+      return adminJson({ rows: results || [] });
+    } catch (err) {
+      return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    }
+  }
+
+  if (path === "/admin/api/security") {
+    if (request.method === "POST") {
+      let body: any = {};
+      try { body = await request.json(); } catch { /* ignore */ }
+      const action = typeof body?.action === "string" ? body.action : "";
+      let ips = await getAllowedIps(env.DB_OTP_MAIL);
+      if (action === "add_current") {
+        if (ip && ips.indexOf(ip) < 0) ips.push(ip);
+      } else if (action === "remove") {
+        const rm = typeof body?.ip === "string" ? body.ip : "";
+        ips = ips.filter((x) => x !== rm);
+      } else if (action === "clear") {
+        ips = [];
+      } else if (action === "set" && Array.isArray(body?.ips)) {
+        ips = body.ips.filter((x: unknown) => typeof x === "string");
+      } else {
+        return adminJson({ error: "Hành động không hợp lệ" }, 400);
+      }
+      try {
+        await setAllowedIps(env.DB_OTP_MAIL, ips);
+      } catch (err) {
+        return adminJson({ error: `Database error: ${err instanceof Error ? err.message : String(err)}` }, 500);
+      }
+      return adminJson({ ok: true, allowed_ips: ips, current_ip: ip });
+    }
+    return adminJson({ allowed_ips: allowed, current_ip: ip });
+  }
+
+  return adminJson({ error: "Not found" }, 404);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
+      return handleAdmin(request, env, url);
+    }
+    if (url.pathname === "/register") {
+      return handleRegisterRequest(request, env);
+    }
     if (url.pathname === "/logs") {
       return handleLogsRequest(request, env);
     }
@@ -564,8 +879,10 @@ export default {
         endpoints: {
           "GET /logs": "?mail=&mode=latest|full&limit=&token=",
           "GET /otp": "?mail=&after=ISO&scan=5&token=",
+          "POST /register": "{email} + token — log created address + IP",
           "DELETE /messages": "?mail= (omit for all)&token=",
           "GET /zones": "?token= — list Cloudflare domains",
+          "GET /admin": "admin dashboard (login required)",
           "GET /health": "status check",
         },
       });
