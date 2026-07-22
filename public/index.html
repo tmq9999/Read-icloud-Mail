@@ -601,6 +601,16 @@
       try { return decodeURIComponent(escape(b)); } catch(e){ return b; }
     } catch(e){ return s; }
   }
+  function hasQP(s){ return /=\r?\n/.test(s) || /=[0-9A-Fa-f]{2}/.test(s); }
+  function decodeQP(s){
+    var t = String(s).replace(/=\r?\n/g, ''), bin = '';
+    for (var i=0;i<t.length;i++){
+      var c = t.charAt(i);
+      if (c==='=' && /^[0-9A-Fa-f]{2}$/.test(t.substr(i+1,2))) { bin += String.fromCharCode(parseInt(t.substr(i+1,2),16)); i+=2; }
+      else bin += c;
+    }
+    try { return decodeURIComponent(escape(bin)); } catch(e){ return bin; }
+  }
   function sanitizeHtml(html){
     return String(html||'')
       .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -652,6 +662,8 @@
     var text = m.bodyText || m.text || '';
     if (looksLikeB64(text)) { var d1 = tryB64(text); if (d1 !== text) text = d1; }
     if (looksLikeB64(html)) { var d2 = tryB64(html); if (d2 !== html) html = d2; }
+    if (hasQP(text)) text = decodeQP(text);
+    if (hasQP(html)) html = decodeQP(html);
     var body = text || stripHtml(html);
     var from = m.from || m.sender || '—';
     var nameM = String(from).match(/^\s*"?([^"<]+?)"?\s*</);
