@@ -340,6 +340,8 @@ export const ADMIN_HTML = `<!DOCTYPE html>
   function decodeBody(s){if(!s)return s;if(looksB64(s)){var d=b64d(s);if(d&&d!==s)s=d;}if(hasQP(s))s=qpd(s);return s;}
   function dec(m){if(!m.__d){m.__d={text:decodeBody(m.body_text||''),html:decodeBody(m.body_html||'')};}return m.__d;}
   function cleanSender(s){return String(s==null?'':s).replace(/\\+caf_=[^@>\\s"']*(@)/i,'$1');}
+  function baseOf(a){var m=String(a==null?'':a).match(/[^\\s<>"]+@[^\\s<>"]+/);var e=m?m[0].toLowerCase():'';var at=e.lastIndexOf('@');if(at<0)return '';var local=e.slice(0,at).split('+')[0];var dom=e.slice(at+1);if(/^(gmail|googlemail)\\.com$/.test(dom))local=local.replace(/\\./g,'');return local?local+'@'+dom:'';}
+  function isForwardSelf(s,r){var b=baseOf(s);return !!b&&b===baseOf(r);}
   function otpOf(m){
     var t=(m.subject||'')+' '+(dec(m).text||'');
     var lab=t.match(/(?:code|otp|verification code|m[aã] x[aá]c nh[aậ]n|m[aã] x[aá]c minh|m[aã] OTP)[^\\d]{0,30}(\\d{4,8})/i);
@@ -370,8 +372,9 @@ export const ADMIN_HTML = `<!DOCTYPE html>
     var m=null;state.msgs.forEach(function(x){if(String(x.id)===String(id))m=x});
     if(!m)return;state.view='html';
     var o=otpOf(m);var hasHtml=!!(dec(m).html&&dec(m).html.trim());
+    var fromLine = isForwardSelf(m.sender, m.recipient) ? '' : '<div class="kv">Từ: '+esc(cleanSender(m.sender)||'—')+'</div>';
     var h='<div class="mh"><div class="meta"><div class="subj">'+esc(m.subject||'(không tiêu đề)')+'</div>'
-      +'<div class="kv">Từ: '+esc(cleanSender(m.sender)||'—')+'</div><div class="kv">Đến: '+esc(m.recipient||'—')+'</div><div class="kv">'+fmt(m.received_at)+'</div></div>'
+      +fromLine+'<div class="kv">Đến: '+esc(m.recipient||'—')+'</div><div class="kv">'+fmt(m.received_at)+'</div></div>'
       +'<div class="x" id="mClose">&times;</div></div>';
     if(o)h+='<div class="otp-card"><div><div class="lbl">Mã xác minh</div><div class="code">'+esc(o)+'</div></div><button class="btn primary" id="mCopy" style="margin-left:auto">Chép mã</button></div>';
     if(hasHtml)h+='<div class="seg"><button id="segH" class="active">HTML</button><button id="segT">Văn bản</button></div>';

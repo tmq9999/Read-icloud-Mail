@@ -603,6 +603,9 @@
   }
   // Dọn return-path forward của Gmail: user+caf_=đích@gmail.com → user@gmail.com
   function cleanSender(s){ return String(s==null?'':s).replace(/\+caf_=[^@>\s"']*(@)/i, '$1'); }
+  // base của địa chỉ (bỏ tên hiển thị, +tag; gmail bỏ dấu chấm) để nhận biết người gửi = chính mail gốc của mình
+  function baseOf(addr){ var m=String(addr==null?'':addr).match(/[^\s<>"]+@[^\s<>"]+/); var e=m?m[0].toLowerCase():''; var at=e.lastIndexOf('@'); if(at<0) return ''; var local=e.slice(0,at).split('+')[0]; var dom=e.slice(at+1); if(/^(gmail|googlemail)\.com$/.test(dom)) local=local.replace(/\./g,''); return local?local+'@'+dom:''; }
+  function isForwardSelf(sender, recipient){ var b=baseOf(sender); return !!b && b===baseOf(recipient); }
   function hasQP(s){ return /=\r?\n/.test(s) || /=[0-9A-Fa-f]{2}/.test(s); }
   function decodeQP(s){
     var t = String(s).replace(/=\r?\n/g, ''), bin = '';
@@ -1062,12 +1065,18 @@
     var hasHtml = !!(sel.html && sel.html.trim());
     var view = hasHtml ? state.view : 'text';
 
+    var toAddr = sel.to || email;
+    var self = isForwardSelf(sel.from, toAddr);
+    var avSeed = self ? toAddr : sel.fromName;
+    var metaHtml = self
+      ? '<div class="from">'+esc(toAddr)+'</div>'
+      : '<div class="from">'+esc(sel.fromName)+' <span>'+esc(String(sel.from).replace(sel.fromName,'').trim())+'</span></div>'
+        + '<div class="kv">Tới: '+esc(toAddr)+'</div>';
     var h = '<div class="reader"><div class="rcard">'
       + '<div class="rhead">'
-      +   '<div class="avatar" style="background:'+avColor(sel.fromName)+'">'+esc((sel.fromName||'?').charAt(0).toUpperCase())+'</div>'
+      +   '<div class="avatar" style="background:'+avColor(avSeed)+'">'+esc(String(avSeed||'?').charAt(0).toUpperCase())+'</div>'
       +   '<div class="meta">'
-      +     '<div class="from">'+esc(sel.fromName)+' <span>'+esc(String(sel.from).replace(sel.fromName,'').trim())+'</span></div>'
-      +     '<div class="kv">Tới: '+esc(sel.to || email)+'</div>'
+      +     metaHtml
       +     '<div class="subj">'+esc(sel.subject)+'</div>'
       +   '</div>'
       +   '<div class="date">'+fmtFull(sel.ts)+'</div>'
